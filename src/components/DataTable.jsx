@@ -93,7 +93,7 @@ entity-3,entity-4`;
                 </div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-4 flex flex-col gap-3">
                 <button
                     onClick={downloadSampleData}
                     className="w-full bg-black text-white py-2 px-4 rounded hover:bg-gray-800 flex items-center justify-center gap-2 font-bold"
@@ -101,9 +101,56 @@ entity-3,entity-4`;
                     <Download size={18} />
                     Download Sample CSVs
                 </button>
+                <button
+                    onClick={downloadMapImage}
+                    className="w-full bg-white text-black border-2 border-black py-2 px-4 rounded hover:bg-gray-100 flex items-center justify-center gap-2 font-bold"
+                >
+                    <Download size={18} />
+                    Download Generated Mondrian Map
+                </button>
             </div>
         </div>
     );
+};
+
+const downloadMapImage = () => {
+    const svg = document.getElementById('mondrian-map-svg');
+    if (!svg) {
+        alert('Map not found!');
+        return;
+    }
+
+    const serializer = new XMLSerializer();
+    const source = serializer.serializeToString(svg);
+    const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    const img = new Image();
+    img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // High resolution (2x)
+        const scale = 2;
+        canvas.width = svg.clientWidth * scale;
+        canvas.height = svg.clientHeight * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+
+        // Fill white background (SVG is transparent by default)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
+
+        ctx.drawImage(img, 0, 0);
+
+        const pngUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = 'mondrian_map.png';
+        link.href = pngUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+    img.src = url;
 };
 
 export default DataTable;

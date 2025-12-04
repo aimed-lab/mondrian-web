@@ -115,7 +115,9 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000 }) =
 
         // 2. Draw Entities (Step 2)
         Object.values(entityRects).forEach(rect => {
-            svg.append("rect")
+            const g = svg.append("g");
+
+            g.append("rect")
                 .attr("x", rect.x)
                 .attr("y", rect.y)
                 .attr("width", rect.width)
@@ -125,6 +127,17 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000 }) =
                 .attr("stroke-width", 3)
                 .append("title") // Tooltip
                 .text(rect.id);
+
+            // Annotation
+            g.append("text")
+                .attr("x", rect.x + rect.width / 2)
+                .attr("y", rect.y - 5) // Slightly above the rect
+                .attr("text-anchor", "middle")
+                .attr("fill", "#1D1D1D")
+                .attr("font-size", "10px")
+                .attr("font-family", "sans-serif")
+                .attr("font-weight", "bold")
+                .text(rect.id.split('-')[1] || rect.id);
         });
 
         // 4. Art Style (Step 4) - Only Border
@@ -142,7 +155,7 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000 }) =
     return (
         <div className="overflow-auto max-w-full max-h-screen p-4 bg-gray-100 flex justify-center">
             <div className="bg-white shadow-2xl inline-block" style={{ width: width, height: height }}>
-                <svg ref={svgRef} width={width} height={height} />
+                <svg id="mondrian-map-svg" ref={svgRef} width={width} height={height} />
             </div>
         </div>
     );

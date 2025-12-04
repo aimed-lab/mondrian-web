@@ -52,21 +52,23 @@ function App() {
             </h1>
             <p className="text-gray-500 mb-8">Bioinformatics Visualization Tool</p>
 
-            <DataUploader onDataLoaded={handleDataLoaded} />
-
-            <div className="flex gap-4 mb-4">
-                <button
-                    onClick={regenerateSynthetic}
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-black transition-colors"
-                >
-                    <RefreshCw size={16} />
-                    Regenerate Synthetic Data
-                </button>
-            </div>
-
             <div className="flex flex-row gap-8 items-start justify-center w-full max-w-[1600px] px-4">
-                <DataTable entities={data.entities} relationships={data.relationships} />
+                {/* Left Column: Upload, Controls, Table */}
+                <div className="flex flex-col gap-6 w-full max-w-md">
+                    <DataUploader onDataLoaded={handleDataLoaded} />
 
+                    <button
+                        onClick={regenerateSynthetic}
+                        className="w-full bg-black text-white py-2 px-4 rounded hover:bg-gray-800 flex items-center justify-center gap-2 font-bold"
+                    >
+                        <RefreshCw size={18} />
+                        Regenerate Synthetic Data
+                    </button>
+
+                    <DataTable entities={data.entities} relationships={data.relationships} />
+                </div>
+
+                {/* Right Column: Visualization */}
                 <MondrianMap
                     entities={data.entities}
                     relationships={data.relationships}

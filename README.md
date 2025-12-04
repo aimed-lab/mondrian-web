@@ -60,11 +60,16 @@ npm run build
 
 The output will be in the `dist` directory, ready for deployment.
 
-## Reference
 
-This tool implements the visualization concepts described in:
+## Citation
 
-**Mondrian Abstraction and Language Model Embeddings for Differential Pathway Analysis**
-*   **Authors**: Fuad Al Abir and Jake Y. Chen
-*   **Publication**: IEEE Conference Publication
-*   **Link**: [IEEE Xplore](https://ieeexplore.ieee.org/abstract/document/10822686)
+```bibtex
+@inproceedings{al2024mondrian,
+  title={Mondrian Abstraction and Language Model Embeddings for Differential Pathway Analysis},
+  author={Al Abir, Fuad and Chen, Jake Y},
+  booktitle={2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM)},
+  pages={407--410},
+  year={2024},
+  organization={IEEE}
+}
+```

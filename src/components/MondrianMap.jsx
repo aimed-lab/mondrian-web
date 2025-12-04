@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-const MondrianMap = ({ entities, relationships, width = 800, height = 600 }) => {
+const MondrianMap = ({ entities, relationships, width = 1000, height = 1000 }) => {
     const svgRef = useRef(null);
 
     useEffect(() => {
@@ -11,119 +11,153 @@ const MondrianMap = ({ entities, relationships, width = 800, height = 600 }) => 
         svg.selectAll("*").remove(); // Clear previous render
 
         // Constants
-        const gridSize = 50;
-        const padding = 20;
+        const gridSize = 10; // 10x10 squares
 
-        // 1. Draw Grid (Step 1 & 4 - Base Canvas & Art Style)
+        // Helper to snap to grid
+        const snap = (val) => Math.round(val / gridSize) * gridSize;
+
+        // 1. Draw Grid (Step 1)
         const drawGrid = () => {
-            // Vertical lines
-            for (let x = 0; x <= width; x += gridSize) {
-                svg.append("line")
-                    .attr("x1", x)
-                    .attr("y1", 0)
-                    .attr("x2", x)
-                    .attr("y2", height)
-                    .attr("stroke", "#F0F0F0")
-                    .attr("stroke-width", 2);
-            }
-            // Horizontal lines
-            for (let y = 0; y <= height; y += gridSize) {
-                svg.append("line")
-                    .attr("x1", 0)
-                    .attr("y1", y)
-                    .attr("x2", width)
-                    .attr("y2", y)
-                    .attr("stroke", "#F0F0F0")
-                    .attr("stroke-width", 2);
-            }
+            // Light grid lines
+            svg.append("g")
+                .attr("class", "grid")
+                .selectAll("line")
+                .data(d3.range(0, width + 1, gridSize))
+                .enter().append("line")
+                .attr("x1", d => d)
+                .attr("y1", 0)
+                .attr("x2", d => d)
+                .attr("y2", height)
+                .attr("stroke", "#F0F0F0")
+                .attr("stroke-width", 1);
+
+            svg.append("g")
+                .attr("class", "grid")
+                .selectAll("line")
+                .data(d3.range(0, height + 1, gridSize))
+                .enter().append("line")
+                .attr("x1", 0)
+                .attr("y1", d => d)
+                .attr("x2", width)
+                .attr("y2", d => d)
+                .attr("stroke", "#F0F0F0")
+                .attr("stroke-width", 1);
         };
         drawGrid();
 
-        // 3. Draw Relationships (Step 3) - Drawn before rects to be behind? Or after?
-        // Usually lines are behind nodes.
-        // L-shaped lines.
+        // Pre-calculate entity geometries (rects)
+        const entityRects = {};
+        entities.forEach(entity => {
+            const scaleFactor = 30;
+            let size = Math.abs(entity.foldChange) * scaleFactor;
+            let snappedSize = Math.max(gridSize, Math.round(size / gridSize) * gridSize);
+
+            let rawX = entity.x - snappedSize / 2;
+            let rawY = entity.y - snappedSize / 2;
+
+            let rectX = snap(rawX);
+            let rectY = snap(rawY);
+
+            rectX = Math.max(0, Math.min(width - snappedSize, rectX));
+            rectY = Math.max(0, Math.min(height - snappedSize, rectY));
+
+            entityRects[entity.id] = {
+                x: rectX,
+                y: rectY,
+                width: snappedSize,
+                height: snappedSize,
+                color: getColor(entity),
+                id: entity.id
+            };
+        });
+
+        // 3. Draw Relationships (Step 3)
         relationships.forEach(rel => {
-            const source = entities.find(e => e.id === rel.source);
-            const target = entities.find(e => e.id === rel.target);
-            if (!source || !target) return;
+            const sourceRect = entityRects[rel.source];
+            const targetRect = entityRects[rel.target];
+            if (!sourceRect || !targetRect) return;
 
-            // Simple L-shape: Horizontal then Vertical
-            const midX = target.x;
+            const getCorners = (r) => [
+                { x: r.x, y: r.y }, // TL
+                { x: r.x + r.width, y: r.y }, // TR
+                { x: r.x, y: r.y + r.height }, // BL
+                { x: r.x + r.width, y: r.y + r.height } // BR
+            ];
 
-            const pathData = `M ${source.x} ${source.y} L ${midX} ${source.y} L ${target.x} ${target.y}`;
+            const sCorners = getCorners(sourceRect);
+            const tCorners = getCorners(targetRect);
+
+            let minDist = Infinity;
+            let bestS = sCorners[0];
+            let bestT = tCorners[0];
+
+            sCorners.forEach(s => {
+                tCorners.forEach(t => {
+                    const dist = Math.hypot(s.x - t.x, s.y - t.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        bestS = s;
+                        bestT = t;
+                    }
+                });
+            });
+
+            const pathData = `M ${bestS.x} ${bestS.y} L ${bestT.x} ${bestS.y} L ${bestT.x} ${bestT.y}`;
 
             svg.append("path")
                 .attr("d", pathData)
                 .attr("fill", "none")
-                .attr("stroke", rel.type === 'up-up' ? '#E30022' : '#0078BF') // Red or Blue based on type
-                .attr("stroke-width", 4);
+                .attr("stroke", "#1D1D1D")
+                .attr("stroke-width", 4)
+                .append("title") // Tooltip
+                .text(`${rel.source} - ${rel.target}`);
         });
 
         // 2. Draw Entities (Step 2)
-        // Rectangles centered at (x,y) with size based on area
-        entities.forEach(entity => {
-            const size = entity.area * gridSize * 1.5; // Scale factor
-            const rectX = entity.x - size / 2;
-            const rectY = entity.y - size / 2;
-
-            // Color based on foldChange (Red=Up, Blue=Down, Yellow=Neutral)
-            let color = '#FFD700'; // Yellow
-            if (entity.foldChange > 0.5) color = '#E30022'; // Red
-            if (entity.foldChange < -0.5) color = '#0078BF'; // Blue
-
+        Object.values(entityRects).forEach(rect => {
             svg.append("rect")
-                .attr("x", rectX)
-                .attr("y", rectY)
-                .attr("width", size)
-                .attr("height", size)
-                .attr("fill", color)
+                .attr("x", rect.x)
+                .attr("y", rect.y)
+                .attr("width", rect.width)
+                .attr("height", rect.height)
+                .attr("fill", rect.color)
                 .attr("stroke", "#1D1D1D")
-                .attr("stroke-width", 3);
-
-            // Add ID label
-            svg.append("text")
-                .attr("x", entity.x)
-                .attr("y", entity.y)
-                .attr("dy", ".35em")
-                .attr("text-anchor", "middle")
-                .attr("fill", "white")
-                .attr("font-size", "10px")
-                .attr("font-family", "sans-serif")
-                .text(entity.id.split('-')[1]);
+                .attr("stroke-width", 3)
+                .append("title") // Tooltip
+                .text(rect.id);
         });
 
-        // 4. Decorative Lines (Step 4)
-        // Add some random black lines on grid to mimic Mondrian
-        for (let i = 0; i < 5; i++) {
-            const isVertical = Math.random() > 0.5;
-            if (isVertical) {
-                const x = Math.floor(Math.random() * (width / gridSize)) * gridSize;
-                svg.append("line")
-                    .attr("x1", x)
-                    .attr("y1", 0)
-                    .attr("x2", x)
-                    .attr("y2", height)
-                    .attr("stroke", "#1D1D1D")
-                    .attr("stroke-width", 4);
-            } else {
-                const y = Math.floor(Math.random() * (height / gridSize)) * gridSize;
-                svg.append("line")
-                    .attr("x1", 0)
-                    .attr("y1", y)
-                    .attr("x2", width)
-                    .attr("y2", y)
-                    .attr("stroke", "#1D1D1D")
-                    .attr("stroke-width", 4);
-            }
-        }
+        // 4. Art Style (Step 4) - Only Border
+        svg.append("rect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", width)
+            .attr("height", height)
+            .attr("fill", "none")
+            .attr("stroke", "#1D1D1D")
+            .attr("stroke-width", 8);
 
     }, [entities, relationships, width, height]);
 
     return (
-        <div className="border-4 border-black bg-white shadow-2xl">
-            <svg ref={svgRef} width={width} height={height} />
+        <div className="overflow-auto max-w-full max-h-screen p-4 bg-gray-100 flex justify-center">
+            <div className="bg-white shadow-2xl inline-block" style={{ width: width, height: height }}>
+                <svg ref={svgRef} width={width} height={height} />
+            </div>
         </div>
     );
+};
+
+// Helper for color
+const getColor = (entity) => {
+    const p = entity.pValue;
+    const fc = entity.foldChange;
+    if (p < 0.05) {
+        if (fc >= 1.25) return '#E30022'; // Red
+        if (fc <= 0.75) return '#0078BF'; // Blue
+        return '#FFD700'; // Yellow
+    }
+    return '#1D1D1D'; // Black
 };
 
 export default MondrianMap;

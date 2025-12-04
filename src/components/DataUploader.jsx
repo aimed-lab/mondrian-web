@@ -13,13 +13,13 @@ const DataUploader = ({ onDataLoaded }) => {
     };
 
     const processFiles = () => {
-        if (!entitiesFile) return; // Relationships optional? Assuming yes for now.
+        if (!entitiesFile) return;
 
         Papa.parse(entitiesFile, {
             header: true,
             dynamicTyping: true,
             complete: (results) => {
-                const entities = results.data.filter(row => row.ID || row.id); // Basic validation
+                const entities = results.data.filter(row => row.ID || row.id);
 
                 if (relationshipsFile) {
                     Papa.parse(relationshipsFile, {
@@ -39,7 +39,10 @@ const DataUploader = ({ onDataLoaded }) => {
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-md mb-6 w-full max-w-2xl">
-            <h2 className="text-xl font-bold mb-4 text-gray-800">Upload Data</h2>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-800">Upload Data</h2>
+            </div>
+
             <div className="flex gap-4 mb-4">
                 <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Entities CSV</label>

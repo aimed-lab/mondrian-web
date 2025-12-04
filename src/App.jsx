@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MondrianMap from './components/MondrianMap';
 import DataUploader from './components/DataUploader';
+import DataTable from './components/DataTable';
 import { generateSyntheticData } from './utils/syntheticData';
 import { RefreshCw } from 'lucide-react';
 
@@ -63,12 +64,16 @@ function App() {
                 </button>
             </div>
 
-            <MondrianMap
-                entities={data.entities}
-                relationships={data.relationships}
-                width={800}
-                height={600}
-            />
+            <div className="flex flex-row gap-8 items-start justify-center w-full max-w-[1600px] px-4">
+                <DataTable entities={data.entities} relationships={data.relationships} />
+
+                <MondrianMap
+                    entities={data.entities}
+                    relationships={data.relationships}
+                    width={1000}
+                    height={1000}
+                />
+            </div>
 
             <div className="mt-8 text-xs text-gray-400">
                 {isSynthetic ? "Viewing Synthetic Data" : "Viewing Uploaded Data"}

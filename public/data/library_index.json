@@ -1,0 +1,101 @@
+[
+  {
+    "id": "GO_Biological_Process_2021",
+    "display_name": "GO Biological Process 2021",
+    "ontology": "GO Biological Process",
+    "year": 2021,
+    "filename": "GO_Biological_Process_2021.json",
+    "term_count": 6036,
+    "gene_count": 14937
+  },
+  {
+    "id": "GO_Biological_Process_2023",
+    "display_name": "GO Biological Process 2023",
+    "ontology": "GO Biological Process",
+    "year": 2023,
+    "filename": "GO_Biological_Process_2023.json",
+    "term_count": 5407,
+    "gene_count": 14698
+  },
+  {
+    "id": "GO_Biological_Process_2025",
+    "display_name": "GO Biological Process 2025",
+    "ontology": "GO Biological Process",
+    "year": 2025,
+    "filename": "GO_Biological_Process_2025.json",
+    "term_count": 5343,
+    "gene_count": 14674
+  },
+  {
+    "id": "GO_Cellular_Component_2021",
+    "display_name": "GO Cellular Component 2021",
+    "ontology": "GO Cellular Component",
+    "year": 2021,
+    "filename": "GO_Cellular_Component_2021.json",
+    "term_count": 511,
+    "gene_count": 11497
+  },
+  {
+    "id": "GO_Cellular_Component_2023",
+    "display_name": "GO Cellular Component 2023",
+    "ontology": "GO Cellular Component",
+    "year": 2023,
+    "filename": "GO_Cellular_Component_2023.json",
+    "term_count": 474,
+    "gene_count": 10972
+  },
+  {
+    "id": "GO_Cellular_Component_2025",
+    "display_name": "GO Cellular Component 2025",
+    "ontology": "GO Cellular Component",
+    "year": 2025,
+    "filename": "GO_Cellular_Component_2025.json",
+    "term_count": 468,
+    "gene_count": 11501
+  },
+  {
+    "id": "GO_Molecular_Function_2021",
+    "display_name": "GO Molecular Function 2021",
+    "ontology": "GO Molecular Function",
+    "year": 2021,
+    "filename": "GO_Molecular_Function_2021.json",
+    "term_count": 1274,
+    "gene_count": 11936
+  },
+  {
+    "id": "GO_Molecular_Function_2023",
+    "display_name": "GO Molecular Function 2023",
+    "ontology": "GO Molecular Function",
+    "year": 2023,
+    "filename": "GO_Molecular_Function_2023.json",
+    "term_count": 1147,
+    "gene_count": 12126
+  },
+  {
+    "id": "GO_Molecular_Function_2025",
+    "display_name": "GO Molecular Function 2025",
+    "ontology": "GO Molecular Function",
+    "year": 2025,
+    "filename": "GO_Molecular_Function_2025.json",
+    "term_count": 1174,
+    "gene_count": 11484
+  },
+  {
+    "id": "SynGO_2022",
+    "display_name": "SynGO 2022",
+    "ontology": "SynGO",
+    "year": 2022,
+    "filename": "SynGO_2022.json",
+    "term_count": 118,
+    "gene_count": 1198
+  },
+  {
+    "id": "SynGO_2024",
+    "display_name": "SynGO 2024",
+    "ontology": "SynGO",
+    "year": 2024,
+    "filename": "SynGO_2024.json",
+    "term_count": 134,
+    "gene_count": 1555
+  }
+]

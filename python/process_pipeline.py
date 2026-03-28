@@ -140,7 +140,7 @@ def run_pipeline(
 
     # --- Step 2: GO Hierarchy Lookup ---
     print("\n[Step 2/6] Looking up GO hierarchy...")
-    go_layers_path = os.path.join(os.path.dirname(__file__), "..", "src", "assets", "GO_layers.csv")
+    go_layers_path = os.path.join(os.path.dirname(__file__), "..", "public", "data", "GO_layers.csv")
     go_layers = load_go_layers(go_layers_path)
     all_nodes = annotate_nodes_with_hierarchy(all_nodes, go_layers)
     layers_found = set(n["layer"] for n in all_nodes if n["layer"] > 0)

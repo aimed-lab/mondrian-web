@@ -32,6 +32,14 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# Large generated data files (keep sample, ignore user-generated outputs)
-# Uncomment if you don't want to track the GMT file:
-# data/*.gmt
+# Raw GMT source files (up to 2GB+, regenerable from source databases)
+data/*.gmt
+
+# Raw geneset library GMT source files
+asset/geneset_lib/
+
+# GoBERT embedding cache (regenerable via generate_lookup_tables.py)
+python/.embeddings_cache.npz
+
+# PowerShell setup scripts
+git_setup.ps1

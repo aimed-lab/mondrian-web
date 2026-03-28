@@ -22,8 +22,7 @@ def load_go_layers(filepath=None):
     if filepath is None:
         # Try default locations
         candidates = [
-            os.path.join(os.path.dirname(__file__), "..", "src", "assets", "GO_layers.csv"),
-            os.path.join(os.path.dirname(__file__), "..", "asset", "GO_layers.txt"),
+            os.path.join(os.path.dirname(__file__), "..", "public", "data", "GO_layers.csv"),
         ]
         for c in candidates:
             if os.path.exists(c):

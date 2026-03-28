@@ -160,25 +160,144 @@ def run_enrichment_rest(gene_list, library="GO_Biological_Process_2023", cutoff=
         return pd.DataFrame()
 
 
+def run_enrichment_local(gene_list, library="GO_Biological_Process_2023", cutoff=0.05):
+    """
+    Run enrichment analysis using local GMT files (offline, no internet needed).
+    Uses Fisher's exact test (scipy.stats.fisher_exact) against local geneset libraries.
+
+    Args:
+        gene_list: List of gene symbols
+        library: Library name (must match a .txt file in asset/geneset_lib/)
+        cutoff: Adjusted p-value cutoff
+
+    Returns:
+        pd.DataFrame with enrichment results
+    """
+    import os
+    from scipy import stats
+
+    if len(gene_list) < 5:
+        print(f"  [SKIP] Gene list too short ({len(gene_list)} genes)")
+        return pd.DataFrame()
+
+    # Find local GMT file
+    gmt_dir = os.path.join(os.path.dirname(__file__), "..", "asset", "geneset_lib")
+    gmt_path = os.path.join(gmt_dir, f"{library}.txt")
+
+    if not os.path.exists(gmt_path):
+        print(f"  [WARN] Local GMT file not found: {gmt_path}")
+        return pd.DataFrame()
+
+    # Parse GMT
+    terms = []
+    all_lib_genes = set()
+    with open(gmt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            term_name = parts[0].strip()
+            genes = [g.strip() for g in parts[2:] if g.strip()]
+            all_lib_genes.update(genes)
+            terms.append({"term": term_name, "genes": genes})
+
+    input_set = set(g.upper() for g in gene_list)
+    N = len(all_lib_genes)  # gene universe
+
+    rows = []
+    for t in terms:
+        term_genes = set(g.upper() for g in t["genes"])
+        K = len(term_genes)
+        overlap = input_set & term_genes
+        k = len(overlap)
+        if k == 0:
+            continue
+
+        # Fisher's exact test (one-tailed, over-representation)
+        # Contingency table:
+        #            In term    Not in term
+        # In input      k        n-k
+        # Not input    K-k      N-K-n+k
+        n = len(input_set)
+        table = [[k, n - k], [K - k, max(0, N - K - n + k)]]
+        _, p_value = stats.fisher_exact(table, alternative="greater")
+
+        # Parse GO ID
+        go_match = re.search(r"\(GO:(\d+)\)", t["term"])
+        go_id = go_match.group(1) if go_match else ""
+        clean_name = re.sub(r"\s*\(GO:\d+\)\s*", "", t["term"]).strip()
+
+        rows.append({
+            "Gene_set": library,
+            "Term": t["term"],
+            "GO_ID": go_id,
+            "Clean_Name": clean_name,
+            "Overlap": f"{k}/{n}",
+            "P-value": p_value,
+            "Adjusted P-value": p_value,  # placeholder, corrected below
+            "Z-score": 0,
+            "Combined Score": -1 * __import__("math").log(max(p_value, 1e-300)),
+            "Genes": ";".join(sorted(overlap)),
+            "Gene_Count": k,
+        })
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+
+    # Benjamini-Hochberg correction
+    n_tests = len(df)
+    df = df.sort_values("P-value").reset_index(drop=True)
+    ranks = range(1, n_tests + 1)
+    df["Adjusted P-value"] = [min(1.0, p * n_tests / r) for p, r in zip(df["P-value"], ranks)]
+
+    # Enforce monotonicity (backward pass)
+    adj = df["Adjusted P-value"].tolist()
+    for i in range(len(adj) - 2, -1, -1):
+        adj[i] = min(adj[i], adj[i + 1]) if i + 1 < len(adj) else adj[i]
+    df["Adjusted P-value"] = adj
+
+    # Filter
+    df = df[df["Adjusted P-value"] < cutoff].copy()
+    df = df.sort_values("Adjusted P-value").reset_index(drop=True)
+
+    return df
+
+
 def run_enrichment(gene_list, library="GO_Biological_Process_2023", cutoff=0.05, mode="auto"):
     """
     Run enrichment analysis with automatic fallback.
+
+    Priority: local GMT files → gseapy → Enrichr REST API.
 
     Args:
         gene_list: List of gene symbols
         library: Enrichr gene set library
         cutoff: Adjusted p-value cutoff
-        mode: 'gseapy', 'rest', or 'auto' (try gseapy first, fallback to REST)
+        mode: 'local', 'gseapy', 'rest', or 'auto'
 
     Returns:
         pd.DataFrame with enrichment results
     """
-    if mode == "gseapy":
+    if mode == "local":
+        return run_enrichment_local(gene_list, library, cutoff)
+    elif mode == "gseapy":
         return run_enrichment_gseapy(gene_list, library, cutoff)
     elif mode == "rest":
         return run_enrichment_rest(gene_list, library, cutoff)
     else:
-        # Auto: try gseapy, fallback to REST
+        # Auto: try local first, then gseapy, then REST
+        import os
+        gmt_dir = os.path.join(os.path.dirname(__file__), "..", "asset", "geneset_lib")
+        gmt_path = os.path.join(gmt_dir, f"{library}.txt")
+        if os.path.exists(gmt_path):
+            print(f"  Using local GMT file for enrichment ({library})...")
+            return run_enrichment_local(gene_list, library, cutoff)
+
         try:
             import gseapy
             print("  Using gseapy for enrichment...")

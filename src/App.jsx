@@ -5,12 +5,14 @@ import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
 import { ChevronLeft, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 
 function App() {
     // --- Data State ---
     const [layoutJson, setLayoutJson] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [info, setInfo] = useState(null);
 
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -18,13 +20,7 @@ function App() {
     // --- Parameters ---
     const [parameters, setParameters] = useState({ ...PARAMETER_DEFAULTS });
 
-    // --- Load sample data on mount ---
-    useEffect(() => {
-        fetch('/data/afatinib_layout.json')
-            .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
-            .then(json => { applyNewLayoutJson(json, { ...PARAMETER_DEFAULTS }); })
-            .catch(() => { /* no sample data — wait for user input */ });
-    }, []);
+    // No auto-load — start empty, render only after user triggers analysis
 
     /**
      * Apply a fresh layout JSON, resetting parameters to sensible defaults.
@@ -33,6 +29,7 @@ function App() {
     const applyNewLayoutJson = (json, baseParams = parameters) => {
         setLayoutJson(json);
         setError(null);
+        setInfo(null);
 
         const layers = getAvailableLayers(json);
         const defaultLayer = layers.length > 0 ? layers[0] : null;
@@ -49,15 +46,46 @@ function App() {
         });
     };
 
-    // --- Run enrichment analysis via Flask API ---
-    const handleRunAnalysis = useCallback(async ({ up_genes, down_genes, case_study, contrast }) => {
+    // --- Run enrichment analysis: offline-first, backend fallback ---
+    const handleRunAnalysis = useCallback(async ({ up_genes, down_genes, case_study, contrast, library }) => {
         setIsLoading(true);
         setError(null);
+        setInfo(null);
+        const libraryId = library || 'GO_Biological_Process_2023';
+
         try {
+            // Try offline pipeline first (works on Netlify, no backend needed)
+            const offlineOk = await isOfflineAvailable();
+            if (offlineOk) {
+                console.log('[App] Using offline pipeline...');
+                const result = await runOfflinePipeline({
+                    upGenes: up_genes,
+                    downGenes: down_genes,
+                    libraryId,
+                    caseName: case_study,
+                    contrast,
+                    cutoff: parameters.pValueCutoff,
+                    jaccardThreshold: parameters.jaccardThreshold,
+                });
+                if (result.metadata?.empty) {
+                    // No significant terms — clear canvas, show soft info message
+                    setLayoutJson(null);
+                    setInfo('No significant GO terms found. Try a different library or lower the p-value cutoff.');
+                } else {
+                    applyNewLayoutJson(result);
+                }
+                return;
+            }
+
+            // Fallback: Flask backend (local dev)
+            console.log('[App] Offline not available, trying backend...');
             const response = await fetch('/api/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ up_genes, down_genes, case_study, contrast }),
+                body: JSON.stringify({
+                    up_genes, down_genes, case_study, contrast,
+                    library: libraryId,
+                }),
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || `Server error: ${response.status}`);
@@ -67,7 +95,7 @@ function App() {
         } finally {
             setIsLoading(false);
         }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [parameters.pValueCutoff, parameters.jaccardThreshold]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleParametersChange = useCallback((newParams) => {
         setParameters(newParams);
@@ -134,14 +162,6 @@ function App() {
                                     Mondrian Map
                                 </h1>
                                 <p className="text-gray-500 text-sm mt-0.5">A Modern GO Enrichment Explorer</p>
-                                {layoutJson && (
-                                    <div className="mt-3 text-sm text-gray-600 bg-gray-50 px-3 py-2 border border-gray-200">
-                                        <span className="font-bold text-gray-900">{layoutJson.metadata?.case_study || 'Case Study'}</span>
-                                        {layoutJson.metadata?.contrast && (
-                                            <span className="ml-2 text-gray-500">| {layoutJson.metadata.contrast}</span>
-                                        )}
-                                    </div>
-                                )}
                             </div>
 
                             <div className="flex flex-col gap-6">
@@ -155,6 +175,13 @@ function App() {
                                 {error && (
                                     <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-none">
                                         <span className="font-bold">Error:</span> {error}
+                                    </div>
+                                )}
+
+                                {/* Info message (no results, etc.) */}
+                                {info && !error && (
+                                    <div className="bg-gray-50 border border-gray-200 text-gray-600 text-xs px-3 py-2 rounded-none">
+                                        {info}
                                     </div>
                                 )}
 

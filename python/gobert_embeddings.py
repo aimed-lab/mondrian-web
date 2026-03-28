@@ -7,31 +7,36 @@ Two modes:
 """
 
 import hashlib
-import re
 
 import numpy as np
 
 
-# --- Mode 1: Full GoBERT (requires torch + transformers) ---
+# ── Constants ──────────────────────────────────────────────────────────────
 
-def get_gobert_embeddings_full(go_ids):
+GOBERT_REPO = "MM-YY-WW/GoBERT"
+GOBERT_DIM = 1024  # GoBERT hidden size — single source of truth
+
+
+# ── Mode 1: Full GoBERT (requires torch + transformers) ──────────────────
+
+def get_gobert_embeddings_full(go_ids, batch_size=512):
     """
     Extract embeddings from the GoBERT model for given GO terms.
+    Processes in batches to handle any number of GO terms.
 
     Args:
         go_ids: List of GO IDs without prefix (e.g., ["0006955", "0002250"])
+        batch_size: Number of tokens per forward pass (default 512)
 
     Returns:
-        dict: {go_id: np.ndarray(768,)} mapping GO IDs to their embeddings
+        dict: {go_id: np.ndarray} mapping GO IDs to their embeddings
     """
     import torch
     from transformers import BertForPreTraining
     from huggingface_hub import hf_hub_download
 
-    repo_name = "MM-YY-WW/GoBERT"
-
     # Build token -> id map from vocab.txt
-    vocab_path = hf_hub_download(repo_name, "vocab.txt")
+    vocab_path = hf_hub_download(GOBERT_REPO, "vocab.txt")
     with open(vocab_path, "r") as f:
         vocab_tokens = [line.strip() for line in f if line.strip()]
     token2id = {tok: idx for idx, tok in enumerate(vocab_tokens)}
@@ -48,84 +53,91 @@ def get_gobert_embeddings_full(go_ids):
 
     go_id_to_embedding = {}
 
-    if len(go_terms_in_vocab) >= 2:
-        input_ids = [token2id[t] for t in go_terms_in_vocab]
-        attention_mask = [1] * len(input_ids)
-
-        input_tensor = torch.tensor([input_ids])
-        attention_mask_tensor = torch.tensor([attention_mask])
-
-        # Load model and extract embeddings
-        model = BertForPreTraining.from_pretrained(repo_name)
+    if len(go_terms_in_vocab) >= 1:
+        # Load model once
+        print(f"  Loading GoBERT model weights...")
+        model = BertForPreTraining.from_pretrained(GOBERT_REPO)
         model.eval()
 
-        with torch.no_grad():
-            outputs = model(
-                input_ids=input_tensor,
-                attention_mask=attention_mask_tensor,
-                output_hidden_states=True,
-            )
-            embedding = outputs.hidden_states[-1].squeeze(0).cpu().numpy()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        print(f"  Using device: {device}")
 
-        print(f"  GoBERT embeddings shape: {embedding.shape}")
+        # Process in batches
+        for batch_start in range(0, len(go_terms_in_vocab), batch_size):
+            batch = go_terms_in_vocab[batch_start:batch_start + batch_size]
+            input_ids = [token2id[t] for t in batch]
+            attention_mask = [1] * len(input_ids)
 
-        # Map embeddings back to GO IDs
-        for i, go_term in enumerate(go_terms_in_vocab):
-            go_id = go_term.replace("GO:", "")
-            go_id_to_embedding[go_id] = embedding[i]
+            input_tensor = torch.tensor([input_ids]).to(device)
+            mask_tensor = torch.tensor([attention_mask]).to(device)
+
+            with torch.no_grad():
+                outputs = model(
+                    input_ids=input_tensor,
+                    attention_mask=mask_tensor,
+                    output_hidden_states=True,
+                )
+                hidden = outputs.hidden_states[-1].squeeze(0).cpu().numpy()
+
+            for i, go_term in enumerate(batch):
+                go_id = go_term.replace("GO:", "")
+                go_id_to_embedding[go_id] = np.asarray(hidden[i], dtype=np.float32).flatten()
+
+            done = min(batch_start + batch_size, len(go_terms_in_vocab))
+            print(f"    Embedded {done}/{len(go_terms_in_vocab)} terms...")
+
+        # Print actual dimension from model output
+        sample_dim = next(iter(go_id_to_embedding.values())).shape[0]
+        print(f"  GoBERT embedding dimension: {sample_dim}")
+
+        del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     else:
-        print("  [WARN] Too few GO terms in GoBERT vocab.")
+        print("  [WARN] No GO terms found in GoBERT vocab.")
 
-    # Add fallback embeddings for missing terms
+    # Add fallback embeddings for missing terms (using model's actual dimension)
+    actual_dim = GOBERT_DIM
+    if go_id_to_embedding:
+        actual_dim = next(iter(go_id_to_embedding.values())).shape[0]
+
     for go_term in go_terms_missing:
         go_id = go_term.replace("GO:", "")
-        go_id_to_embedding[go_id] = _hash_embedding(go_id, dim=768)
+        go_id_to_embedding[go_id] = _hash_embedding(go_id, dim=actual_dim)
 
     return go_id_to_embedding
 
 
-# --- Mode 2: Fallback hash-based embeddings (no GPU needed) ---
+# ── Mode 2: Fallback hash-based embeddings (no GPU needed) ──────────────
 
-def _hash_embedding(go_id, dim=128):
+def _hash_embedding(go_id, dim=GOBERT_DIM):
     """
     Generate a deterministic pseudo-embedding from a GO ID using hashing.
     Produces consistent results across runs for the same GO ID.
     """
-    # Use SHA-256 to generate deterministic bytes
     hash_bytes = hashlib.sha256(f"GO:{go_id}".encode()).digest()
-
-    # Seed numpy RNG with hash for reproducibility
     seed = int.from_bytes(hash_bytes[:4], "big")
     rng = np.random.RandomState(seed)
-
-    # Generate embedding vector
     embedding = rng.randn(dim).astype(np.float32)
-
-    # Normalize to unit length
     norm = np.linalg.norm(embedding)
     if norm > 0:
         embedding = embedding / norm
-
     return embedding
 
 
-def get_gobert_embeddings_fallback(go_ids, dim=128):
+def get_gobert_embeddings_fallback(go_ids, dim=GOBERT_DIM):
     """
     Generate deterministic hash-based embeddings for GO terms.
-    Uses GO ID hashing + significance-aware perturbation.
 
     Args:
         go_ids: List of GO IDs without prefix
-        dim: Embedding dimension (default 128)
+        dim: Embedding dimension
 
     Returns:
         dict: {go_id: np.ndarray(dim,)}
     """
-    go_id_to_embedding = {}
-    for go_id in go_ids:
-        go_id_to_embedding[go_id] = _hash_embedding(go_id, dim=dim)
-
-    return go_id_to_embedding
+    return {go_id: _hash_embedding(go_id, dim=dim) for go_id in go_ids}
 
 
 def get_gobert_embeddings(go_ids, mode="auto"):

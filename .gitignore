@@ -3,6 +3,7 @@ node_modules/
 my_asset/
 IMPLEMENTATION_PLAN.md
 *docs
+*docx
 
 # Python virtual environment
 python/venv/

@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import MondrianMap from './components/MondrianMap';
 import DataTable from './components/DataTable';
 import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
-import { ChevronLeft, Menu } from 'lucide-react';
+import AIExplainPanel from './components/AIExplainPanel';
+import { ChevronLeft, Menu, Sparkles, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 
@@ -16,6 +17,15 @@ function App() {
 
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
+    const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+
+    // --- AI Explain: nodes currently selected on the Mondrian Map ---
+    const [selectedNodes, setSelectedNodes] = useState([]);
+    // Exact edge-ID set from MondrianMap's selection state — used to filter crosstalks precisely.
+    const [selectedRelationshipIds, setSelectedRelationshipIds] = useState(new Set());
+
+    // --- Ref to MondrianMap — used to call downloadMap imperatively ---
+    const mondrianMapRef = useRef(null);
 
     // --- Parameters ---
     const [parameters, setParameters] = useState({ ...PARAMETER_DEFAULTS });
@@ -99,6 +109,19 @@ function App() {
 
     const handleParametersChange = useCallback((newParams) => {
         setParameters(newParams);
+    }, []);
+
+    // --- AI Explain: receive selection updates from MondrianMap ---
+    // Closes the panel automatically when the user deselects everything,
+    // enforcing the rule that AI Explain only exists in selection mode.
+    const handleSelectionChange = useCallback((selectedEntities, rawSelection) => {
+        setSelectedNodes(selectedEntities);
+        // Propagate the exact relationship-ID set so AIHypothesisPanel can filter
+        // crosstalks to only those explicitly part of the selection.
+        setSelectedRelationshipIds(rawSelection?.relationships ?? new Set());
+        if (selectedEntities.length === 0) {
+            setIsAIPanelOpen(false);
+        }
     }, []);
 
     // --- Derived: available layers ---
@@ -214,8 +237,16 @@ function App() {
                 )}
             </AnimatePresence>
 
-            {/* Main Content Area */}
-            <div className="flex-1 relative h-full">
+            {/* Main Content Area — shifts right padding to match the AI panel so
+                the map always stays centred between the two panels. The
+                MondrianMap's ResizeObserver picks this up automatically. */}
+            <div
+                className="flex-1 relative h-full"
+                style={{
+                    paddingRight: isAIPanelOpen ? '440px' : '0',
+                    transition: 'padding-right 0.25s ease-in-out',
+                }}
+            >
                 <AnimatePresence>
                     {!isPanelOpen && (
                         <motion.button
@@ -231,12 +262,89 @@ function App() {
                 </AnimatePresence>
 
                 <MondrianMap
+                    ref={mondrianMapRef}
                     entities={entities}
                     relationships={relationships}
                     width={1000}
                     height={1000}
                     parameters={parameters}
                     isLoading={isLoading}
+                    onSelectionChange={handleSelectionChange}
+                />
+
+                {/* ── Bottom-right button stack ── */}
+                <div className="absolute bottom-6 right-6 z-10 flex flex-col items-stretch gap-2">
+                    {/* Download Full — always visible when there is map data */}
+                    <AnimatePresence>
+                        {layoutJson && (
+                            <motion.button
+                                key="dl-full"
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 8 }}
+                                transition={{ duration: 0.18 }}
+                                onClick={() => mondrianMapRef.current?.downloadMap('full')}
+                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider"
+                                title="Download full map as SVG"
+                            >
+                                <Download size={14} />
+                                Download Full
+                            </motion.button>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Download Selection — only when ≥1 node is selected */}
+                    <AnimatePresence>
+                        {selectedNodes.length >= 1 && (
+                            <motion.button
+                                key="dl-selection"
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 8 }}
+                                transition={{ duration: 0.18 }}
+                                onClick={() => mondrianMapRef.current?.downloadMap('selection')}
+                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider"
+                                title="Download selected blocks as SVG"
+                            >
+                                <Download size={14} />
+                                Download Selection
+                            </motion.button>
+                        )}
+                    </AnimatePresence>
+
+                    {/* AI Hypothesis — only when ≥1 node selected AND panel is closed.
+                        Selection mode is the ONLY entry point into the AI feature. */}
+                    <AnimatePresence>
+                        {selectedNodes.length >= 1 && !isAIPanelOpen && (
+                            <motion.button
+                                key="ai-hypothesis-btn"
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 8 }}
+                                transition={{ duration: 0.18 }}
+                                onClick={() => setIsAIPanelOpen(true)}
+                                className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
+                                title={`Generate AI hypothesis for ${selectedNodes.length} selected term${selectedNodes.length > 1 ? 's' : ''}`}
+                            >
+                                <Sparkles size={14} />
+                                AI Hypothesis
+                                <span className="ml-1 bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5">
+                                    {selectedNodes.length}
+                                </span>
+                            </motion.button>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* AI Explain slide-out panel */}
+                <AIExplainPanel
+                    isOpen={isAIPanelOpen}
+                    onClose={() => setIsAIPanelOpen(false)}
+                    selectedNodes={selectedNodes}
+                    selectedRelationshipIds={selectedRelationshipIds}
+                    allEdges={relationships}
+                    metadata={layoutJson?.metadata || {}}
+                    parameters={parameters}
                 />
             </div>
         </div>

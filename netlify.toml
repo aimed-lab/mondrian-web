@@ -5,8 +5,16 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Redirect all routes to index.html for SPA client-side routing
+[functions]
+  # Functions live inside src/ alongside all other source code.
+  # These files are intentionally thin adapters; all logic is in
+  # src/api/handlers/ and is shared with the Vite dev middleware.
+  directory    = "src/api/functions"
+  node_bundler = "esbuild"
+
+# SPA fallback — all routes render index.html (client-side routing).
+# Netlify Functions at /.netlify/functions/* are handled before this rule.
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
+  from   = "/*"
+  to     = "/index.html"
   status = 200

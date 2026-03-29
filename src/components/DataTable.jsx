@@ -1,6 +1,74 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import sparcLogo from '../assets/sparc_logo.png';
+import { parseLINCSId } from '../utils/parseLINCSId.js';
+
+// ---------------------------------------------------------------------------
+// ExperimentSummary — renders metadata in a structured, human-readable way.
+// Tries to parse LINCS identifiers; falls back to raw strings for other data.
+// ---------------------------------------------------------------------------
+
+function MetaRow({ label, value }) {
+    if (!value && value !== 0) return null;
+    return (
+        <div className="flex gap-2 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 shrink-0 w-24 pt-0.5">{label}</span>
+            <span className="text-xs text-gray-800 break-words min-w-0">{value}</span>
+        </div>
+    );
+}
+
+function ExperimentSummary({ meta, nodeCount, edgeCount }) {
+    // Attempt LINCS parsing from the contrast string (most detailed) then case_study
+    const parsed = parseLINCSId(meta.contrast) || parseLINCSId(meta.case_study);
+
+    const upCount   = meta.up_gene_count   ?? 0;
+    const downCount = meta.down_gene_count ?? 0;
+
+    if (parsed) {
+        const { cellLine, drugDisplay, concentration, durationDisplay, well, plate } = parsed;
+        // Build library label: strip common prefixes for readability
+        const lib = (meta.library || '')
+            .replace(/_\d{4}$/, '')          // drop year suffix
+            .replace(/_/g, ' ');
+
+        return (
+            <div className="space-y-2">
+                {/* Condition hero */}
+                <div className="bg-gray-50 border border-gray-200 px-3 py-2.5">
+                    <p className="text-xs font-bold text-gray-900 leading-snug">
+                        {cellLine} · {drugDisplay}
+                        {concentration && <span className="font-normal text-gray-600"> ({concentration})</span>}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">vs. Control</p>
+                </div>
+
+                {/* Detail rows */}
+                <div className="space-y-1.5 pt-1">
+                    <MetaRow label="Cell Line"    value={cellLine} />
+                    <MetaRow label="Drug"         value={`${drugDisplay}${concentration ? ` — ${concentration}` : ''}`} />
+                    <MetaRow label="Duration"     value={durationDisplay !== 'treatment' ? durationDisplay : 'Unspecified'} />
+                    <MetaRow label="Plate / Well" value={`${plate}  ·  ${well}`} />
+                    {lib && <MetaRow label="Library" value={lib} />}
+                    <MetaRow label="Gene Input"   value={`${upCount} up · ${downCount} down`} />
+                    <MetaRow label="GO Terms"     value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
+                </div>
+            </div>
+        );
+    }
+
+    // Fallback for non-LINCS datasets
+    return (
+        <div className="space-y-1.5">
+            {meta.case_study && <MetaRow label="Case"     value={meta.case_study} />}
+            {meta.contrast   && <MetaRow label="Contrast" value={meta.contrast}   />}
+            <MetaRow label="Genes"    value={`${upCount} upregulated · ${downCount} downregulated`} />
+            <MetaRow label="GO Terms" value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
 
 const DataTable = ({ layoutJson }) => {
     const [isResultsOpen,   setIsResultsOpen]   = useState(true);
@@ -47,22 +115,11 @@ const DataTable = ({ layoutJson }) => {
 
                             {/* Metadata summary */}
                             {meta && (
-                                <div className="text-sm text-gray-600 space-y-1">
-                                    {meta.case_study && (
-                                        <p><span className="font-semibold text-gray-800">Case:</span> {meta.case_study}</p>
-                                    )}
-                                    {meta.contrast && (
-                                        <p><span className="font-semibold text-gray-800">Contrast:</span> {meta.contrast}</p>
-                                    )}
-                                    <p>
-                                        <span className="font-semibold text-gray-800">Genes:</span>{' '}
-                                        {meta.up_gene_count ?? 0} upregulated · {meta.down_gene_count ?? 0} downregulated
-                                    </p>
-                                    <p>
-                                        <span className="font-semibold text-gray-800">GO terms:</span> {nodes.length}{' '}
-                                        · <span className="font-semibold text-gray-800">Crosstalks:</span> {edges.length}
-                                    </p>
-                                </div>
+                                <ExperimentSummary
+                                    meta={meta}
+                                    nodeCount={nodes.length}
+                                    edgeCount={edges.length}
+                                />
                             )}
 
                             {/* GO Terms table */}

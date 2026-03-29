@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
-import { Download } from 'lucide-react';
 
-const MondrianMap = ({ entities, relationships, width = 1000, height = 1000, parameters = {}, dataSource = 'real', isLoading = false }) => {
+const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, dataSource = 'real', isLoading = false, onSelectionChange = null }, ref) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const [selection, setSelection] = useState({ entities: new Set(), relationships: new Set() });
@@ -251,6 +250,14 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000, par
         setSelection({ entities: new Set(), relationships: new Set() });
     }, [entities, relationships]);
 
+    // Notify parent about selection changes (for AI Explain panel)
+    useEffect(() => {
+        if (onSelectionChange) {
+            const selectedEntityList = entities.filter(e => selection.entities.has(e.id));
+            onSelectionChange(selectedEntityList, selection);
+        }
+    }, [selection, entities, onSelectionChange]);
+
     const handleEntityClick = (e, entityId) => {
         e.stopPropagation();
         const context = getEntityContext(entityId);
@@ -448,7 +455,7 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000, par
     }, [layoutEntities, relationships, width, height, selection, drawMap]);
 
     // --- SVG Export ---
-    const handleDownload = (mode) => {
+    const handleDownload = useCallback((mode) => {
         let dlEntities = layoutEntities;
         let dlRelationships = relationships;
         if (mode === 'selection') {
@@ -471,22 +478,13 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000, par
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    };
+    }, [layoutEntities, relationships, selection, drawMap, width, height]);
 
-    const hasSelection = selection.entities.size > 0 || selection.relationships.size > 0;
+    // Expose downloadMap to parent via ref
+    useImperativeHandle(ref, () => ({ downloadMap: handleDownload }), [handleDownload]);
 
     return (
         <div ref={containerRef} className="w-full h-screen overflow-hidden bg-gray-100 relative">
-            <div className="absolute top-6 right-6 z-10 flex gap-2">
-                <button onClick={() => handleDownload('full')} className="bg-white text-black border border-gray-300 py-2 px-4 rounded shadow-md hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 font-medium" title="Download Full Map">
-                    <Download size={18} /> Download Full
-                </button>
-                {hasSelection && (
-                    <button onClick={() => handleDownload('selection')} className="bg-black text-white py-2 px-4 rounded shadow-md hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 font-medium" title="Download Selection Only">
-                        <Download size={18} /> Download Selection
-                    </button>
-                )}
-            </div>
             <svg id="mondrian-map-svg" ref={svgRef} className="w-full h-full block cursor-grab active:cursor-grabbing" onClick={handleBackgroundClick} />
 
             {/* Loading spinner overlay */}
@@ -518,6 +516,6 @@ const MondrianMap = ({ entities, relationships, width = 1000, height = 1000, par
             )}
         </div>
     );
-};
+});
 
 export default MondrianMap;

@@ -1,5 +1,8 @@
 # Dependencies
 node_modules/
+my_asset/
+IMPLEMENTATION_PLAN.md
+*docs
 
 # Python virtual environment
 python/venv/

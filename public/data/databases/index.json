@@ -22,5 +22,29 @@
     "label_type": "Ligand Perturbation",
     "drug_count": 7546,
     "num_shards": 6
+  },
+  {
+    "id": "LINCS_L1000_CRISPR_Preturbation_Full",
+    "name": "LINCS L1000 CRISPR Preturbation Full",
+    "description": "LINCS L1000 CRISPR Preturbation Full perturbation signatures",
+    "label_type": "CRISPR Perturbation",
+    "drug_count": 140945,
+    "num_shards": 110
+  },
+  {
+    "id": "MoTrPAC_Endurance_Trained_Rats_2023",
+    "name": "MoTrPAC Endurance Trained Rats (2023)",
+    "description": "MoTrPAC Endurance Trained Rats (2023) perturbation signatures",
+    "label_type": "Excercise Training",
+    "drug_count": 139,
+    "num_shards": 1
+  },
+  {
+    "id": "GTEx_Aging_Signatures_2021",
+    "name": "GTEx Aging Signatures 2021",
+    "description": "GTEx Aging Signatures 2021 perturbation signatures",
+    "label_type": "Aging Signature",
+    "drug_count": 135,
+    "num_shards": 1
   }
 ]

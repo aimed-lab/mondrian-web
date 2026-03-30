@@ -455,7 +455,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     }, [layoutEntities, relationships, width, height, selection, drawMap]);
 
     // --- SVG Export ---
-    const handleDownload = useCallback((mode) => {
+    const handleDownload = useCallback((mode, customFilename = null) => {
         let dlEntities = layoutEntities;
         let dlRelationships = relationships;
         if (mode === 'selection') {
@@ -474,14 +474,63 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `mondrian_map_${mode}.svg`;
+        link.download = customFilename || `mondrian_map_${mode}.svg`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }, [layoutEntities, relationships, selection, drawMap, width, height]);
 
-    // Expose downloadMap to parent via ref
-    useImperativeHandle(ref, () => ({ downloadMap: handleDownload }), [handleDownload]);
+    /**
+     * Imperative handles for direct map control from parent components.
+     * toggleSelection: allows table-based selection to sync with canvas state.
+     */
+    useImperativeHandle(ref, () => ({
+        downloadMap: handleDownload,
+        toggleSelection: (type, id, isMulti = false) => {
+            if (type === 'node') {
+                const context = getEntityContext(id);
+                if (isMulti) {
+                    setSelection(prev => {
+                        const newEntities = new Set(prev.entities);
+                        const newRelationships = new Set(prev.relationships);
+                        const isSelected = prev.entities.has(id);
+                        if (isSelected) {
+                            context.entities.forEach(eid => newEntities.delete(eid));
+                            context.relationships.forEach(rid => newRelationships.delete(rid));
+                        } else {
+                            context.entities.forEach(eid => newEntities.add(eid));
+                            context.relationships.forEach(rid => newRelationships.add(rid));
+                        }
+                        return { entities: newEntities, relationships: newRelationships };
+                    });
+                } else {
+                    setSelection(context);
+                }
+            } else if (type === 'edge') {
+                const edgeId = typeof id === 'string' ? id : `${id.source}-${id.target}`;
+                const rel = relationships.find(r => `${r.source}-${r.target}` === edgeId);
+                if (!rel) return;
+                const context = getEdgeContext(rel);
+                if (isMulti) {
+                    setSelection(prev => {
+                        const newEntities = new Set(prev.entities);
+                        const newRelationships = new Set(prev.relationships);
+                        const isSelected = prev.relationships.has(edgeId);
+                        if (isSelected) {
+                            context.entities.forEach(eid => newEntities.delete(eid));
+                            context.relationships.forEach(rid => newRelationships.delete(rid));
+                        } else {
+                            context.entities.forEach(eid => newEntities.add(eid));
+                            context.relationships.forEach(rid => newRelationships.add(rid));
+                        }
+                        return { entities: newEntities, relationships: newRelationships };
+                    });
+                } else {
+                    setSelection(context);
+                }
+            }
+        }
+    }), [handleDownload, getEntityContext, getEdgeContext, relationships]);
 
     return (
         <div ref={containerRef} className="w-full h-screen overflow-hidden bg-gray-100 relative">

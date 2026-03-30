@@ -24,11 +24,11 @@ function groupLibraries(index) {
 
 // ── Shared styles ────────────────────────────────────────────────────────
 
-const labelCls    = 'block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5';
-const selectCls   = 'w-full text-sm bg-gray-50 border border-gray-200 focus:outline-none focus:border-black px-3 py-2 transition-colors cursor-pointer';
+const labelCls = 'block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5';
+const selectCls = 'w-full text-sm bg-gray-50 border border-gray-200 focus:outline-none focus:border-black px-3 py-2 transition-colors cursor-pointer';
 const textareaCls = 'w-full text-sm font-mono bg-gray-50 border border-gray-200 focus:outline-none focus:border-black p-2.5 resize-none transition-colors placeholder-gray-400 leading-relaxed';
-const inputCls    = 'w-full text-sm bg-gray-50 border border-gray-200 focus:outline-none focus:border-black px-3 py-2 transition-colors';
-const tabActive   = 'px-4 py-2 text-sm font-bold border-b-2 border-black text-black transition-colors';
+const inputCls = 'w-full text-sm bg-gray-50 border border-gray-200 focus:outline-none focus:border-black px-3 py-2 transition-colors';
+const tabActive = 'px-4 py-2 text-sm font-bold border-b-2 border-black text-black transition-colors';
 const tabInactive = 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors cursor-pointer';
 
 
@@ -95,7 +95,7 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
                     setSelectedDb(idx[0].id);
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     }, []);
 
     // Load database metadata (drug list) when database changes
@@ -115,7 +115,7 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
             .then(data => {
                 if (data) setDbMeta(data);
             })
-            .catch(() => {});
+            .catch(() => { });
     }, [dbIndex, selectedDb]);
 
     // Close dropdown on outside click
@@ -219,11 +219,22 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
 
     const handleVisualize = useCallback(() => {
         if (!canVisualize) return;
+
+        // Specific control descriptions based on dataset
+        const isGTExAging = selectedDb === 'GTEx_Aging_Signatures_2021';
+        const isMoTrPAC = selectedDb === 'MoTrPAC_Endurance_Trained_Rats_2023';
+        const isLINCS = selectedDb.startsWith('LINCS_L1000');
+
+        let contrastSuffix = '';
+        if (isMoTrPAC) contrastSuffix = ' vs Sedentary Control';
+        else if (isLINCS) contrastSuffix = ' vs Vehicle Control';
+        else if (!isGTExAging) contrastSuffix = ' vs Control';
+
         onRunAnalysis({
             up_genes: drugGenes.up || [],
             down_genes: drugGenes.dn || [],
             case_study: `${selectedDb}_${selectedDrug}`,
-            contrast: `${selectedDrug} vs Control`,
+            contrast: `${selectedDrug}${contrastSuffix}`,
             library: selectedLibrary,
         });
     }, [canVisualize, drugGenes, selectedDb, selectedDrug, selectedLibrary, onRunAnalysis]);
@@ -287,9 +298,8 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
                                 {filteredDrugs.slice(0, 200).map(d => (
                                     <button
                                         key={d.name}
-                                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors flex justify-between items-center ${
-                                            d.name === selectedDrug ? 'bg-gray-100 font-medium' : ''
-                                        }`}
+                                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors flex justify-between items-center ${d.name === selectedDrug ? 'bg-gray-100 font-medium' : ''
+                                            }`}
                                         onClick={() => handleDrugSelect(d.name)}
                                     >
                                         <span className="truncate">{d.name}</span>
@@ -354,13 +364,13 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
 // ── Custom Input Panel ───────────────────────────────────────────────────
 
 function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunAnalysis, isLoading }) {
-    const [upText,   setUpText]   = useState('');
+    const [upText, setUpText] = useState('');
     const [downText, setDownText] = useState('');
     const [caseName, setCaseName] = useState('');
     const [contrast, setContrast] = useState('');
     const [showMeta, setShowMeta] = useState(false);
 
-    const upGenes   = parseGenes(upText);
+    const upGenes = parseGenes(upText);
     const downGenes = parseGenes(downText);
     const totalGenes = new Set([...upGenes, ...downGenes]).size;
     const canRun = (upGenes.length >= 5 || downGenes.length >= 5) && !isLoading;
@@ -368,11 +378,11 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
     const handleRun = useCallback(() => {
         if (!canRun) return;
         onRunAnalysis({
-            up_genes:   upGenes,
+            up_genes: upGenes,
             down_genes: downGenes,
             case_study: caseName.trim() || 'Custom Analysis',
-            contrast:   contrast.trim(),
-            library:    selectedLibrary,
+            contrast: contrast.trim(),
+            library: selectedLibrary,
         });
     }, [upGenes, downGenes, caseName, contrast, canRun, onRunAnalysis, selectedLibrary]);
 

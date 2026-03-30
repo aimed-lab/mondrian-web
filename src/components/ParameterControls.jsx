@@ -47,7 +47,7 @@ const SliderWithInput = ({
     const sliderVal = Math.max(min, Math.min(max, value));
 
     // Adaptive input width: enough characters for the current draft value
-    const inputWidth = `${Math.max(2, draft.toString().length) + 1.2}ch`;
+    const inputWidth = `${Math.max(2, draft.toString().length) + 3}ch`;
 
     const sliderCls = [
         'w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-black',
@@ -137,6 +137,7 @@ const ParameterControls = ({
     layerEdgeCounts = {},
 }) => {
     const [open, setOpen] = useState(true);
+    const [activeTab, setActiveTab] = useState('count');
     const availableSet = new Set(availableLayers);
     const currentLayer = parameters.selectedLayer;
 
@@ -163,14 +164,14 @@ const ParameterControls = ({
     }, [onParametersChange, nodeCount, edgeCount, availableLayers, layerNodeCounts, layerEdgeCounts]);
 
     const displayedBlocks = Math.min(parameters.maxBlocks, nodeCount);
-    const displayedEdges  = Math.min(parameters.maxEdges,  edgeCount);
+    const displayedEdges = Math.min(parameters.maxEdges, edgeCount);
 
     const layerBtnCls = (layer) => {
         const available = layer === null ? availableLayers.length > 0 : availableSet.has(layer);
-        const selected  = currentLayer === layer;
+        const selected = currentLayer === layer;
         const base = 'min-w-[2.25rem] px-2.5 py-1.5 text-xs font-bold rounded-none border-2 transition-colors';
         if (!available) return `${base} border-gray-200 text-gray-300 cursor-not-allowed select-none`;
-        if (selected)   return `${base} bg-black text-white border-black`;
+        if (selected) return `${base} bg-black text-white border-black`;
         return `${base} bg-white text-gray-800 border-gray-300 hover:border-black hover:text-black`;
     };
 
@@ -183,7 +184,7 @@ const ParameterControls = ({
                 className="flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5"
                 onClick={() => setOpen(o => !o)}
             >
-                <h2 className="text-base font-bold text-black tracking-wide">Visualization Controls</h2>
+                <h2 className="text-base font-bold text-black tracking-wide">Filters</h2>
                 {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </div>
 
@@ -226,89 +227,116 @@ const ParameterControls = ({
 
                     {sep}
 
-                    {/* ── # GO Terms ── */}
-                    <SliderWithInput
-                        label="# GO Terms"
-                        sublabel="Top enriched biological processes to display"
-                        value={displayedBlocks}
-                        min={1}
-                        max={Math.max(1, nodeCount)}
-                        step={1}
-                        onChange={v => handleChange('maxBlocks', v)}
-                        disabled={nodeCount === 0}
-                        maxLabel={`/ ${nodeCount}`}
-                    />
+                    <div className="flex border-b border-gray-200 -mt-2">
+                        <button
+                            onClick={() => setActiveTab('count')}
+                            className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${activeTab === 'count' ? 'border-black text-black' : 'border-transparent text-gray-400 hover:text-gray-600'
+                                }`}
+                        >
+                            By Count
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('threshold')}
+                            className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${activeTab === 'threshold' ? 'border-black text-black' : 'border-transparent text-gray-400 hover:text-gray-600'
+                                }`}
+                        >
+                            By Threshold
+                        </button>
+                    </div>
 
-                    {/* ── # Crosstalks ── */}
-                    <SliderWithInput
-                        label="# Crosstalks"
-                        sublabel="Gene-overlap edges between GO terms (Jaccard ≥ threshold)"
-                        value={displayedEdges}
-                        min={0}
-                        max={Math.max(0, edgeCount)}
-                        step={1}
-                        onChange={v => handleChange('maxEdges', v)}
-                        disabled={edgeCount === 0}
-                        maxLabel={`/ ${edgeCount}`}
-                    />
+                    {activeTab === 'count' && (
+                        <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-top-1 duration-200">
+                            {/* ── # GO Terms ── */}
+                            <SliderWithInput
+                                label="# GO Terms"
+                                sublabel="Top enriched biological processes to display"
+                                value={displayedBlocks}
+                                min={1}
+                                max={Math.max(1, nodeCount)}
+                                step={1}
+                                onChange={v => handleChange('maxBlocks', v)}
+                                disabled={nodeCount === 0}
+                                maxLabel={`/ ${nodeCount}`}
+                            />
 
-                    {sep}
+                            {/* ── # Crosstalks ── */}
+                            <SliderWithInput
+                                label="# Crosstalks"
+                                sublabel="Gene-overlap edges between GO terms (Jaccard ≥ threshold)"
+                                value={displayedEdges}
+                                min={0}
+                                max={Math.max(0, edgeCount)}
+                                step={1}
+                                onChange={v => handleChange('maxEdges', v)}
+                                disabled={edgeCount === 0}
+                                maxLabel={`/ ${edgeCount}`}
+                            />
+                        </div>
+                    )}
 
-                    {/* ── Adj. P-value Cutoff ── */}
-                    <SliderWithInput
-                        label="Adj. P-value Cutoff"
-                        sublabel="Show GO terms with adjusted p-value ≤ threshold"
-                        value={parameters.pValueCutoff}
-                        min={0.001}
-                        max={0.5}
-                        step={0.001}
-                        onChange={v => handleChange('pValueCutoff', v)}
-                        isFloat
-                    />
+                    {activeTab === 'threshold' && (
+                        <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-top-1 duration-200">
+                            {/* ── Adj. P-value Cutoff ── */}
+                            <SliderWithInput
+                                label="Adj. P-value Cutoff"
+                                sublabel="Show GO terms with adjusted p-value ≤ threshold"
+                                value={parameters.pValueCutoff}
+                                min={0.001}
+                                max={0.5}
+                                step={0.001}
+                                onChange={v => handleChange('pValueCutoff', v)}
+                                isFloat
+                            />
 
-                    {/* ── Min. Jaccard Index ── */}
-                    <SliderWithInput
-                        label="Min. Jaccard Index"
-                        sublabel="Minimum gene-set overlap for crosstalk edges"
-                        value={parameters.jaccardThreshold}
-                        min={0.0}
-                        max={1.0}
-                        step={0.01}
-                        onChange={v => handleChange('jaccardThreshold', v)}
-                        isFloat
-                    />
+                            {/* ── Min. Jaccard Index ── */}
+                            <SliderWithInput
+                                label="Min. Jaccard Index"
+                                sublabel="Minimum gene-set overlap for crosstalk edges"
+                                value={parameters.jaccardThreshold}
+                                min={0.0}
+                                max={1.0}
+                                step={0.01}
+                                onChange={v => handleChange('jaccardThreshold', v)}
+                                isFloat
+                            />
+                        </div>
+                    )}
 
                     {sep}
 
                     {/* ── Block Size ── */}
-                    <SliderWithInput
-                        label="Block Size"
-                        sublabel="Scale factor for GO term block area"
-                        value={parameters.blockSizeMultiplier}
-                        min={0.3}
-                        max={3.0}
-                        step={0.1}
-                        onChange={v => handleChange('blockSizeMultiplier', v)}
-                        unit="×"
-                        isFloat
-                    />
+                    {/* 
+<SliderWithInput
+    label="Block Size"
+    sublabel="Scale factor for GO term block area"
+    value={parameters.blockSizeMultiplier}
+    min={0.3}
+    max={3.0}
+    step={0.1}
+    onChange={v => handleChange('blockSizeMultiplier', v)}
+    unit="×"
+    isFloat
+/>
+*/}
 
                     {/* ── Block Spacing ── */}
-                    <SliderWithInput
-                        label="Block Spacing"
-                        sublabel="Minimum padding between blocks"
-                        value={parameters.blockSpacing}
-                        min={0}
-                        max={30}
-                        step={1}
-                        onChange={v => handleChange('blockSpacing', v)}
-                        unit="px"
-                    />
+                    {/* 
+<SliderWithInput
+    label="Block Spacing"
+    sublabel="Minimum padding between blocks"
+    value={parameters.blockSpacing}
+    min={0}
+    max={30}
+    step={1}
+    onChange={v => handleChange('blockSpacing', v)}
+    unit="px"
+/>
+*/}
 
                     {/* Reset */}
                     <button
                         onClick={handleReset}
-                        className="w-full bg-gray-100 text-gray-800 py-2 px-4 hover:bg-gray-200 flex items-center justify-center gap-2 font-semibold transition-colors rounded-none text-sm border border-gray-300"
+                        className="w-full bg-gray-100 text-gray-800 py-3 px-4 hover:bg-gray-200 flex items-center justify-center gap-2 font-bold transition-colors rounded-none text-sm border border-gray-300 uppercase"
                     >
                         <RotateCcw size={14} />
                         Reset to Defaults

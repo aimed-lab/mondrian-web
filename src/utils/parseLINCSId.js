@@ -73,8 +73,8 @@ function isDuration(s) {
 export function parseLINCSId(raw) {
   if (!raw || typeof raw !== 'string') return null;
 
-  // Strip trailing " vs Control" (case-insensitive)
-  let id = raw.replace(/\s+vs\s+control\s*$/i, '').trim();
+  // Strip trailing control suffixes (case-insensitive)
+  let id = raw.replace(/\s+vs\s+(?:vehicle\s+|sedentary\s+)?control\s*$/i, '').trim();
 
   // Split on underscore
   let parts = id.split('_');
@@ -152,7 +152,7 @@ export function describeContrast(contrast) {
   const parts = [`${cellLine} cells`, `treated with ${drugDisplay}`];
   if (concentration) parts.push(`at ${concentration}`);
   if (durationDisplay && durationDisplay !== 'treatment') parts.push(`for ${durationDisplay}`);
-  parts.push('vs. Control');
+  parts.push('vs. Vehicle Control');
 
   return parts.join(' ');
 }

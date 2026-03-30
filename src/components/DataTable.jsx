@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { ChevronDown, ChevronUp, Download } from 'lucide-react';
 import sparcLogo from '../assets/sparc_logo.png';
 import { parseLINCSId } from '../utils/parseLINCSId.js';
 
@@ -22,7 +22,7 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
     // Attempt LINCS parsing from the contrast string (most detailed) then case_study
     const parsed = parseLINCSId(meta.contrast) || parseLINCSId(meta.case_study);
 
-    const upCount   = meta.up_gene_count   ?? 0;
+    const upCount = meta.up_gene_count ?? 0;
     const downCount = meta.down_gene_count ?? 0;
 
     if (parsed) {
@@ -40,18 +40,18 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
                         {cellLine} · {drugDisplay}
                         {concentration && <span className="font-normal text-gray-600"> ({concentration})</span>}
                     </p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">vs. Control</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">vs. Vehicle Control</p>
                 </div>
 
                 {/* Detail rows */}
                 <div className="space-y-1.5 pt-1">
-                    <MetaRow label="Cell Line"    value={cellLine} />
-                    <MetaRow label="Drug"         value={`${drugDisplay}${concentration ? ` — ${concentration}` : ''}`} />
-                    <MetaRow label="Duration"     value={durationDisplay !== 'treatment' ? durationDisplay : 'Unspecified'} />
+                    <MetaRow label="Cell Line" value={cellLine} />
+                    <MetaRow label="Drug" value={`${drugDisplay}${concentration ? ` — ${concentration}` : ''}`} />
+                    <MetaRow label="Duration" value={durationDisplay !== 'treatment' ? durationDisplay : 'Unspecified'} />
                     <MetaRow label="Plate / Well" value={`${plate}  ·  ${well}`} />
                     {lib && <MetaRow label="Library" value={lib} />}
-                    <MetaRow label="Gene Input"   value={`${upCount} up · ${downCount} down`} />
-                    <MetaRow label="GO Terms"     value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
+                    <MetaRow label="Gene Input" value={`${upCount} up · ${downCount} down`} />
+                    <MetaRow label="GO Terms" value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
                 </div>
             </div>
         );
@@ -60,9 +60,9 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
     // Fallback for non-LINCS datasets
     return (
         <div className="space-y-1.5">
-            {meta.case_study && <MetaRow label="Case"     value={meta.case_study} />}
-            {meta.contrast   && <MetaRow label="Contrast" value={meta.contrast}   />}
-            <MetaRow label="Genes"    value={`${upCount} upregulated · ${downCount} downregulated`} />
+            {meta.case_study && <MetaRow label="Case" value={meta.case_study} />}
+            {meta.contrast && <MetaRow label="Contrast" value={meta.contrast} />}
+            <MetaRow label="Genes" value={`${upCount} upregulated · ${downCount} downregulated`} />
             <MetaRow label="GO Terms" value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
         </div>
     );
@@ -70,16 +70,16 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
 
 // ---------------------------------------------------------------------------
 
-const DataTable = ({ layoutJson }) => {
-    const [isResultsOpen,   setIsResultsOpen]   = useState(true);
-    const [isLegendOpen,    setIsLegendOpen]     = useState(false);
-    const [isReferenceOpen, setIsReferenceOpen]  = useState(false);
+const DataTable = ({ layoutJson, onSelectionToggle, selection }) => {
+    const [isResultsOpen, setIsResultsOpen] = useState(true);
+    const [isLegendOpen, setIsLegendOpen] = useState(false);
+    const [isReferenceOpen, setIsReferenceOpen] = useState(false);
 
     const nodes = layoutJson?.nodes ?? [];
     const edges = layoutJson?.edges ?? [];
-    const meta  = layoutJson?.metadata ?? null;
+    const meta = layoutJson?.metadata ?? null;
 
-    const fmtP   = (val) => {
+    const fmtP = (val) => {
         if (val === undefined || val === null) return '—';
         if (val < 1e-4) return val.toExponential(2);
         return val.toFixed(4);
@@ -87,17 +87,66 @@ const DataTable = ({ layoutJson }) => {
     const fmtSig = (val) => (typeof val === 'number' ? val.toFixed(2) : '—');
 
     const dirColor = {
-        upregulated:   '#E30022',
+        upregulated: '#E30022',
         downregulated: '#0078BF',
-        shared:        '#FFD700',
+        shared: '#FFD700',
     };
 
-    const panelCls   = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none';
-    const headerCls  = 'flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5';
-    const titleCls   = 'text-base font-bold text-black tracking-wide';
+    const handleDownloadResults = useCallback(() => {
+        if (!meta || !nodes) return;
+
+        let content = "ENRICHMENT ANALYSIS RESULTS\n";
+        content += "===========================\n\n";
+        content += "METADATA\n";
+        content += `Case Study: ${meta.case_study || 'N/A'}\n`;
+        content += `Contrast: ${meta.contrast || 'N/A'}\n`;
+        content += `Library: ${meta.library || 'N/A'}\n`;
+        content += `Up Genes: ${meta.up_gene_count || 0}\n`;
+        content += `Down Genes: ${meta.down_gene_count || 0}\n`;
+        content += `GO Terms: ${nodes.length}\n`;
+        content += `Crosstalks: ${edges.length}\n`;
+        content += `Generated at: ${meta.generated_at || new Date().toISOString()}\n\n`;
+
+        content += "GO TERMS\n";
+        content += "Direction,GO ID,Term Name,Layer,-log10(p),Adj P-value,Gene Count,Genes\n";
+        nodes.forEach(n => {
+            const row = [
+                n.direction,
+                `GO:${n.go_id}`,
+                `"${n.name.replace(/"/g, '""')}"`,
+                n.layer || 0,
+                n.significance_score.toFixed(4),
+                n.adjusted_p_value.toExponential(4),
+                n.gene_count,
+                `"${(n.genes || []).join(', ')}"`
+            ];
+            content += row.join(',') + "\n";
+        });
+
+        if (edges.length > 0) {
+            content += "\nCROSSTALKS\n";
+            content += "Source,Target,Jaccard\n";
+            edges.forEach(e => {
+                content += `GO:${e.source},GO:${e.target},${e.weight.toFixed(4)}\n`;
+            });
+        }
+
+        const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }, [meta, nodes, edges]);
+
+    const panelCls = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none';
+    const headerCls = 'flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5';
+    const titleCls = 'text-base font-bold text-black tracking-wide';
     const subheadCls = 'text-xs font-bold uppercase px-3 py-2 border-b border-gray-200 bg-gray-50 tracking-wider text-gray-600';
-    const thCls      = 'px-3 py-1.5 text-xs text-gray-600 font-bold';
-    const tdCls      = 'px-3 py-1.5 text-sm';
+    const thCls = 'px-3 py-1.5 text-xs text-gray-600 font-bold';
+    const tdCls = 'px-3 py-1.5 text-sm';
 
     return (
         <div className="flex flex-col gap-6 w-full -mt-6">
@@ -131,6 +180,7 @@ const DataTable = ({ layoutJson }) => {
                                             <tr>
                                                 <th className={thCls}>Dir</th>
                                                 <th className={thCls}>Name</th>
+                                                <th className={thCls}>Layer</th>
                                                 <th className={thCls}>−log₁₀p</th>
                                                 <th className={thCls}>Genes</th>
                                             </tr>
@@ -138,21 +188,29 @@ const DataTable = ({ layoutJson }) => {
                                         <tbody>
                                             {[...nodes]
                                                 .sort((a, b) => b.significance_score - a.significance_score)
-                                                .map(n => (
-                                                    <tr key={n.go_id} className="border-b border-gray-50 hover:bg-gray-50">
-                                                        <td className={tdCls}>
-                                                            <span
-                                                                className="inline-block w-2.5 h-2.5 border border-gray-300"
-                                                                style={{ background: dirColor[n.direction] ?? '#1D1D1D' }}
-                                                            />
-                                                        </td>
-                                                        <td className={`${tdCls} max-w-[150px] truncate font-mono text-gray-700`} title={n.name}>
-                                                            {n.name}
-                                                        </td>
-                                                        <td className={`${tdCls} text-gray-600`}>{fmtSig(n.significance_score)}</td>
-                                                        <td className={`${tdCls} text-gray-500`}>{n.gene_count}</td>
-                                                    </tr>
-                                                ))}
+                                                .map(n => {
+                                                    const isSelected = selection?.nodes?.has(`GO:${n.go_id}`);
+                                                    return (
+                                                        <tr
+                                                            key={n.go_id}
+                                                            className={`border-b border-gray-50 hover:bg-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : ''}`}
+                                                            onClick={(e) => onSelectionToggle?.('node', `GO:${n.go_id}`, e.ctrlKey || e.metaKey)}
+                                                        >
+                                                            <td className={tdCls}>
+                                                                <span
+                                                                    className="inline-block w-2.5 h-2.5 border border-gray-300"
+                                                                    style={{ background: dirColor[n.direction] ?? '#1D1D1D' }}
+                                                                />
+                                                            </td>
+                                                            <td className={`${tdCls} max-w-[150px] truncate font-mono text-gray-700`} title={n.name}>
+                                                                {n.name}
+                                                            </td>
+                                                            <td className={`${tdCls} text-gray-500 font-mono`}>{n.layer || 0}</td>
+                                                            <td className={`${tdCls} text-gray-600 font-mono`}>{fmtSig(n.significance_score)}</td>
+                                                            <td className={`${tdCls} text-gray-500 font-mono text-right`}>{n.gene_count}</td>
+                                                        </tr>
+                                                    );
+                                                })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -174,18 +232,35 @@ const DataTable = ({ layoutJson }) => {
                                             <tbody>
                                                 {[...edges]
                                                     .sort((a, b) => b.weight - a.weight)
-                                                    .map((e, i) => (
-                                                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                                                            <td className={`${tdCls} font-mono text-gray-600 truncate max-w-[100px]`}>{e.source}</td>
-                                                            <td className={`${tdCls} font-mono text-gray-600 truncate max-w-[100px]`}>{e.target}</td>
-                                                            <td className={`${tdCls} text-gray-500`}>{e.weight?.toFixed(3)}</td>
-                                                        </tr>
-                                                    ))}
+                                                    .map((e, i) => {
+                                                        const isSelected = selection?.edges?.has(`GO:${e.source}-GO:${e.target}`);
+                                                        return (
+                                                            <tr
+                                                                key={i}
+                                                                className={`border-b border-gray-50 hover:bg-gray-100 cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : ''}`}
+                                                                onClick={(ev) => onSelectionToggle?.('edge', `GO:${e.source}-GO:${e.target}`, ev.ctrlKey || ev.metaKey)}
+                                                            >
+                                                                <td className={`${tdCls} font-mono text-gray-600 truncate max-w-[100px]`}>{e.source}</td>
+                                                                <td className={`${tdCls} font-mono text-gray-600 truncate max-w-[100px]`}>{e.target}</td>
+                                                                <td className={`${tdCls} text-gray-500 font-mono text-right`}>{e.weight?.toFixed(3)}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
                             )}
+
+                            {/* Download Button */}
+                            <button
+                                onClick={handleDownloadResults}
+                                className="mt-2 w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                title="Download complete results as CSV"
+                            >
+                                <Download size={14} />
+                                Download Enrichment Results
+                            </button>
                         </div>
                     )}
                 </div>

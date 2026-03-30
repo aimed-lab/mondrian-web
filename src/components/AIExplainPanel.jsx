@@ -13,8 +13,8 @@
  *   Yellow  #FFD700  — shared / Crosstalk Interpretation accent
  */
 
-import React, { useMemo, useEffect, useState, useCallback } from 'react';
-import { Sparkles, X, AlertCircle, Clock, Minus, RotateCcw, Copy, Check } from 'lucide-react';
+import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { Sparkles, X, AlertCircle, Clock, Minus, RotateCcw, Copy, Check, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAIExplain } from '../hooks/useAIExplain';
 
@@ -302,6 +302,24 @@ export default function AIHypothesisPanel({
 
   // "Copied" flash state for the copy button
   const [copied, setCopied] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState('idle');
+  const downloadTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (downloadTimerRef.current) {
+      clearTimeout(downloadTimerRef.current);
+      downloadTimerRef.current = null;
+    }
+    setDownloadStatus('idle');
+  }, [explanation]);
+
+  useEffect(() => {
+    return () => {
+      if (downloadTimerRef.current) {
+        clearTimeout(downloadTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = useCallback(() => {
     if (!explanation) return;
@@ -309,6 +327,29 @@ export default function AIHypothesisPanel({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [explanation]);
+
+  const handleDownloadExplanation = useCallback(() => {
+    if (!explanation) return;
+    const caseName = (metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+    const filename = `ai_hypothesis_${caseName}.md`;
+    const blob = new Blob([explanation], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setDownloadStatus('success');
+    if (downloadTimerRef.current) {
+      clearTimeout(downloadTimerRef.current);
+    }
+    downloadTimerRef.current = setTimeout(() => {
+      setDownloadStatus('idle');
+      downloadTimerRef.current = null;
+    }, 2000);
+  }, [explanation, metadata]);
 
   // Clear previous result whenever the selection changes
   useEffect(() => {
@@ -441,18 +482,38 @@ export default function AIHypothesisPanel({
                   >
                     Hypothesis
                   </p>
-                  {/* Copy button — flips to "Copied" with check icon for 2 s */}
-                  <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-1 text-[10px] transition-colors"
-                    style={{ color: copied ? BRAND.blue : '#9CA3AF' }}
-                    title="Copy to clipboard"
-                  >
-                    {copied
-                      ? <><Check className="w-3 h-3" /> Copied</>
-                      : <><Copy className="w-3 h-3" /> Copy</>
-                    }
-                  </button>
+                  {/* Copy & download controls */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="flex items-center gap-1 text-[10px] transition-colors"
+                      style={{ color: copied ? BRAND.blue : '#9CA3AF' }}
+                      title="Copy to clipboard"
+                    >
+                      {copied
+                        ? <><Check className="w-3 h-3" /> Copied</>
+                        : <><Copy className="w-3 h-3" /> Copy</>
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadExplanation}
+                      disabled={!explanation}
+                      className="flex items-center gap-1 text-[10px] transition-colors"
+                      style={{
+                        color: downloadStatus === 'success' ? BRAND.blue : '#9CA3AF',
+                        cursor: !explanation ? 'not-allowed' : 'pointer',
+                        opacity: !explanation ? 0.4 : 1,
+                      }}
+                      title="Download hypothesis as Markdown"
+                    >
+                      {downloadStatus === 'success'
+                        ? <><Check className="w-3 h-3" /> Downloaded</>
+                        : <><Download className="w-3 h-3" /> Download</>
+                      }
+                    </button>
+                  </div>
                 </div>
 
                 <HypothesisView text={explanation} />

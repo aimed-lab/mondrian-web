@@ -4,6 +4,7 @@ my_asset/
 IMPLEMENTATION_PLAN.md
 *docs
 *docx
+.claude/worktrees/sleepy-burnell
 
 # Python virtual environment
 python/venv/

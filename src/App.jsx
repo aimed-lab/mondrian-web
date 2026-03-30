@@ -221,7 +221,16 @@ function App() {
 
                                 <hr className="border-gray-100" />
 
-                                <DataTable layoutJson={layoutJson} />
+                                <DataTable
+                                    layoutJson={layoutJson}
+                                    onSelectionToggle={(type, id, isMulti) =>
+                                        mondrianMapRef.current?.toggleSelection(type, id, isMulti)
+                                    }
+                                    selection={{
+                                        nodes: new Set(selectedNodes.map(n => n.id)),
+                                        edges: selectedRelationshipIds
+                                    }}
+                                />
                             </div>
                         </div>
 
@@ -283,12 +292,17 @@ function App() {
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 8 }}
                                 transition={{ duration: 0.18 }}
-                                onClick={() => mondrianMapRef.current?.downloadMap('full')}
-                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider"
-                                title="Download full map as SVG"
+
+                                onClick={() => {
+                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                    const filename = `mondrian_map_full_${caseName}.svg`;
+                                    mondrianMapRef.current?.downloadMap('full', filename);
+                                }}
+                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
+                                title="Download full Mondrian Map as SVG"
                             >
                                 <Download size={14} />
-                                Download Full
+                                Download Full Mondrian Map
                             </motion.button>
                         )}
                     </AnimatePresence>
@@ -302,12 +316,16 @@ function App() {
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 8 }}
                                 transition={{ duration: 0.18 }}
-                                onClick={() => mondrianMapRef.current?.downloadMap('selection')}
-                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider"
+                                onClick={() => {
+                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                    const filename = `mondrian_map_selection_${caseName}.svg`;
+                                    mondrianMapRef.current?.downloadMap('selection', filename);
+                                }}
+                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
                                 title="Download selected blocks as SVG"
                             >
                                 <Download size={14} />
-                                Download Selection
+                                Download Selected Mondrian Map
                             </motion.button>
                         )}
                     </AnimatePresence>

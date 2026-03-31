@@ -4,10 +4,11 @@ import DataTable from './components/DataTable';
 import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
 import AIExplainPanel from './components/AIExplainPanel';
-import { ChevronLeft, Menu, Sparkles, Download } from 'lucide-react';
+import { ChevronLeft, Menu, Sparkles, Download, Archive } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 import { getLayerSuffix } from './utils/layerSuffix.js';
+import JSZip from 'jszip';
 
 function App() {
     // --- Data State ---
@@ -167,6 +168,52 @@ function App() {
         return mapRealDataToEntities(layoutJson, parameters);
     }, [layoutJson, parameters]);
 
+    const handleDownloadAllLayersZip = async () => {
+        if (!layoutJson || !mondrianMapRef.current) return;
+        const zip = new JSZip();
+        const case_study_slug = (layoutJson.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+
+        // Get unique layers from nodes
+        const availableLayers = Array.from(new Set(layoutJson.nodes.map(n => n.layer))).sort((a, b) => a - b);
+
+        // Helper to get parameters for a specific layer
+        const getParamsForLayer = (layer) => ({
+            ...parameters,
+            selectedLayer: layer
+        });
+
+        // 1. Generate Combined (All Layers) map
+        const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(null));
+        const allSvg = mondrianMapRef.current.getSVG('full', allEntities, allRelationships);
+        zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
+
+        // 2. Generate each individual layer map
+        for (const layer of availableLayers) {
+            const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(layer));
+            if (layerEntities.length > 0) {
+                const layerSvg = mondrianMapRef.current.getSVG('full', layerEntities, layerRelationships);
+                zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.svg`, layerSvg);
+            }
+        }
+
+        // Generate and download zip
+        const content = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(content);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `mondrian_map_all_layers_${case_study_slug}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const isSelectionActive = selectedNodes.length > 0;
+    const case_study_slug = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+    const layerSuffix = parameters.selectedLayer === null ? '_all' : `_L${parameters.selectedLayer}`;
+    const mapDownloadLabel = parameters.selectedLayer === null
+        ? "Download Mondrian Map (All Layers Combined)"
+        : `Download Mondrian Map (Layer ${parameters.selectedLayer})`;
+
     return (
         <div className="h-screen w-screen overflow-hidden bg-gray-50 flex font-sans">
             {/* Collapsible Sidebar */}
@@ -287,16 +334,15 @@ function App() {
 
                 {/* ── Bottom-right button stack ── */}
                 <div className="absolute bottom-6 right-6 z-10 flex flex-col items-stretch gap-2">
-                    {/* Download Full — always visible when there is map data */}
-                    <AnimatePresence>
-                        {layoutJson && (
+                    {/* Standard downloads (hidden in selection mode) */}
+                    {!isSelectionActive && layoutJson && (
+                        <AnimatePresence>
                             <motion.button
                                 key="dl-full"
                                 initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 8 }}
                                 transition={{ duration: 0.18 }}
-
                                 onClick={() => {
                                     const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
                                     const layerSuffix = getLayerSuffix(parameters.selectedLayer);
@@ -304,17 +350,31 @@ function App() {
                                     mondrianMapRef.current?.downloadMap('full', filename);
                                 }}
                                 className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
-                                title="Download full Mondrian Map as SVG"
+                                title={mapDownloadLabel}
                             >
                                 <Download size={14} />
-                                Download Full Mondrian Map
+                                {mapDownloadLabel}
                             </motion.button>
-                        )}
-                    </AnimatePresence>
 
-                    {/* Download Selection — only when ≥1 node is selected */}
-                    <AnimatePresence>
-                        {selectedNodes.length >= 1 && (
+                            <motion.button
+                                key="dl-zip"
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 8 }}
+                                transition={{ duration: 0.18, delay: 0.05 }}
+                                onClick={handleDownloadAllLayersZip}
+                                className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
+                                title="Download all layer maps in a ZIP archive"
+                            >
+                                <Archive size={14} />
+                                Download Mondrian Maps (All Layers)
+                            </motion.button>
+                        </AnimatePresence>
+                    )}
+
+                    {/* Selection-specific downloads */}
+                    {isSelectionActive && (
+                        <AnimatePresence>
                             <motion.button
                                 key="dl-selection"
                                 initial={{ opacity: 0, y: 8 }}
@@ -328,36 +388,32 @@ function App() {
                                     mondrianMapRef.current?.downloadMap('selection', filename);
                                 }}
                                 className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
-                                title="Download selected blocks as SVG"
+                                title="Download only the currently selected terms"
                             >
                                 <Download size={14} />
-                                Download Selected Mondrian Map
+                                Download Mondrian Map (Selected)
                             </motion.button>
-                        )}
-                    </AnimatePresence>
 
-                    {/* AI Hypothesis — only when ≥1 node selected AND panel is closed.
-                        Selection mode is the ONLY entry point into the AI feature. */}
-                    <AnimatePresence>
-                        {selectedNodes.length >= 1 && !isAIPanelOpen && (
-                            <motion.button
-                                key="ai-hypothesis-btn"
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 8 }}
-                                transition={{ duration: 0.18 }}
-                                onClick={() => setIsAIPanelOpen(true)}
-                                className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
-                                title={`Generate AI hypothesis for ${selectedNodes.length} selected term${selectedNodes.length > 1 ? 's' : ''}`}
-                            >
-                                <Sparkles size={14} />
-                                AI Hypothesis
-                                <span className="ml-1 bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5">
-                                    {selectedNodes.length}
-                                </span>
-                            </motion.button>
-                        )}
-                    </AnimatePresence>
+                            {!isAIPanelOpen && (
+                                <motion.button
+                                    key="ai-hypothesis-btn"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 8 }}
+                                    transition={{ duration: 0.18, delay: 0.05 }}
+                                    onClick={() => setIsAIPanelOpen(true)}
+                                    className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
+                                    title={`Generate AI hypothesis for ${selectedNodes.length} selected term${selectedNodes.length > 1 ? 's' : ''}`}
+                                >
+                                    <Sparkles size={14} className="animate-pulse" />
+                                    Generate AI Hypothesis
+                                    <span className="ml-1 bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5">
+                                        {selectedNodes.length}
+                                    </span>
+                                </motion.button>
+                            )}
+                        </AnimatePresence>
+                    )}
                 </div>
 
                 {/* AI Explain slide-out panel */}

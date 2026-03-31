@@ -455,21 +455,33 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     }, [layoutEntities, relationships, width, height, selection, drawMap]);
 
     // --- SVG Export ---
-    const handleDownload = useCallback((mode, customFilename = null) => {
-        let dlEntities = layoutEntities;
-        let dlRelationships = relationships;
-        if (mode === 'selection') {
+    const getSVGContent = useCallback((mode, customEntities = null, customRelationships = null) => {
+        let dlEntities = customEntities || layoutEntities;
+        let dlRelationships = customRelationships || relationships;
+
+        if (mode === 'selection' && !customEntities) {
             dlEntities = layoutEntities.filter(e => selection.entities.has(e.id));
             dlRelationships = relationships.filter(r => selection.relationships.has(`${r.source}-${r.target}`));
         }
+
         const hiddenSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         hiddenSvg.setAttribute("width", width);
         hiddenSvg.setAttribute("height", height);
         hiddenSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
         const d3Svg = d3.select(hiddenSvg);
-        drawMap(d3Svg, { drawEntities: dlEntities, drawRelationships: dlRelationships, config: { selectionState: null } }, false);
+
+        drawMap(d3Svg, {
+            drawEntities: dlEntities,
+            drawRelationships: dlRelationships,
+            config: { selectionState: null }
+        }, false);
+
         const serializer = new XMLSerializer();
-        const svgString = serializer.serializeToString(hiddenSvg);
+        return serializer.serializeToString(hiddenSvg);
+    }, [layoutEntities, relationships, selection, drawMap, width, height]);
+
+    const handleDownload = useCallback((mode, customFilename = null) => {
+        const svgString = getSVGContent(mode);
         const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -478,7 +490,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    }, [layoutEntities, relationships, selection, drawMap, width, height]);
+    }, [getSVGContent]);
 
     /**
      * Imperative handles for direct map control from parent components.
@@ -486,6 +498,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
      */
     useImperativeHandle(ref, () => ({
         downloadMap: handleDownload,
+        getSVG: getSVGContent,
         toggleSelection: (type, id, isMulti = false) => {
             if (type === 'node') {
                 const context = getEntityContext(id);

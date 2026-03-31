@@ -224,15 +224,17 @@ function App() {
 
                                 <DataTable
                                     layoutJson={layoutJson}
+                                    filteredNodes={entities}
+                                    filteredEdges={relationships}
                                     onSelectionToggle={(type, id, isMulti) =>
                                         mondrianMapRef.current?.toggleSelection(type, id, isMulti)
                                     }
-                                selection={{
-                                    nodes: new Set(selectedNodes.map(n => n.id)),
-                                    edges: selectedRelationshipIds
-                                }}
-                                currentLayer={parameters.selectedLayer}
-                            />
+                                    selection={{
+                                        nodes: new Set(selectedNodes.map(n => n.id)),
+                                        edges: selectedRelationshipIds
+                                    }}
+                                    currentLayer={parameters.selectedLayer}
+                                />
                             </div>
                         </div>
 

@@ -19,7 +19,8 @@ function MetaRow({ label, value }) {
     );
 }
 
-function ExperimentSummary({ meta, nodeCount, edgeCount }) {
+function ExperimentSummary({ meta, nodeCount, edgeCount, currentLayer }) {
+    const layerDisplay = currentLayer === null ? 'All' : `Layer ${currentLayer}`;
     // Attempt LINCS parsing from the contrast string (most detailed) then case_study
     const parsed = parseLINCSId(meta.contrast) || parseLINCSId(meta.case_study);
 
@@ -52,7 +53,9 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
                     <MetaRow label="Plate / Well" value={`${plate}  ·  ${well}`} />
                     {lib && <MetaRow label="Library" value={lib} />}
                     <MetaRow label="Gene Input" value={`${upCount} up · ${downCount} down`} />
-                    <MetaRow label="GO Terms" value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
+                    <MetaRow label="GO Terms" value={nodeCount} />
+                    <MetaRow label="Crosstalks" value={edgeCount} />
+                    <MetaRow label="Selected Layer" value={layerDisplay} />
                 </div>
             </div>
         );
@@ -64,21 +67,27 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
             {meta.case_study && <MetaRow label="Case" value={meta.case_study} />}
             {meta.contrast && <MetaRow label="Contrast" value={meta.contrast} />}
             <MetaRow label="Genes" value={`${upCount} upregulated · ${downCount} downregulated`} />
-            <MetaRow label="GO Terms" value={`${nodeCount}  ·  Crosstalks: ${edgeCount}`} />
+            <MetaRow label="GO Terms" value={nodeCount} />
+            <MetaRow label="Crosstalks" value={edgeCount} />
+            <MetaRow label="Selected Layer" value={layerDisplay} />
         </div>
     );
 }
 
 // ---------------------------------------------------------------------------
 
-const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) => {
+const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle, selection, currentLayer }) => {
     const [isResultsOpen, setIsResultsOpen] = useState(true);
     const [isLegendOpen, setIsLegendOpen] = useState(false);
     const [isReferenceOpen, setIsReferenceOpen] = useState(false);
+    const [isAIPanelOpen, setIsAIPanelOpen] = useState(false); // For future use if needed
 
-    const nodes = layoutJson?.nodes ?? [];
-    const edges = layoutJson?.edges ?? [];
+    // Use filtered nodes/edges if provided, fallback to layoutJson
+    const nodes = filteredNodes ?? layoutJson?.nodes ?? [];
+    const edges = filteredEdges ?? layoutJson?.edges ?? [];
     const meta = layoutJson?.metadata ?? null;
+
+    const layerSuffix = currentLayer === null ? ' (All)' : ` (L${currentLayer})`;
 
     const fmtP = (val) => {
         if (val === undefined || val === null) return '—';
@@ -96,7 +105,8 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) =
     const handleDownloadResults = useCallback(() => {
         if (!meta || !nodes) return;
 
-        let content = "ENRICHMENT ANALYSIS RESULTS\n";
+        const isFiltered = filteredNodes !== undefined;
+        let content = "ENRICHMENT ANALYSIS RESULTS" + (isFiltered ? ` — ${currentLayer === null ? 'All Layers' : `Layer ${currentLayer}`}` : "") + "\n";
         content += "===========================\n\n";
         content += "METADATA\n";
         content += `Case Study: ${meta.case_study || 'N/A'}\n`;
@@ -111,13 +121,15 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) =
         content += "GO TERMS\n";
         content += "Direction,GO ID,Term Name,Layer,-log10(p),Adj P-value,Gene Count,Genes\n";
         nodes.forEach(n => {
+            const pVal = n.pValue !== undefined ? n.pValue : n.adjusted_p_value;
+            const pValStr = (typeof pVal === 'number') ? pVal.toExponential(4) : (pVal || '—');
             const row = [
                 n.direction,
-                `GO:${n.go_id}`,
+                n.go_id.startsWith('GO:') ? n.go_id : `GO:${n.go_id}`,
                 `"${n.name.replace(/"/g, '""')}"`,
                 n.layer || 0,
                 n.significance_score.toFixed(4),
-                n.adjusted_p_value.toExponential(4),
+                pValStr,
                 n.gene_count,
                 `"${(n.genes || []).join(', ')}"`
             ];
@@ -128,7 +140,9 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) =
             content += "\nCROSSTALKS\n";
             content += "Source,Target,Jaccard\n";
             edges.forEach(e => {
-                content += `GO:${e.source},GO:${e.target},${e.weight.toFixed(4)}\n`;
+                const source = e.source.startsWith('GO:') ? e.source : `GO:${e.source}`;
+                const target = e.target.startsWith('GO:') ? e.target : `GO:${e.target}`;
+                content += `${source},${target},${e.weight.toFixed(4)}\n`;
             });
         }
 
@@ -136,12 +150,12 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) =
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        const layerSuffix = getLayerSuffix(currentLayer);
-        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${layerSuffix}.csv`);
+        const suffix = getLayerSuffix(currentLayer);
+        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    }, [meta, nodes, edges]);
+    }, [meta, nodes, edges, currentLayer, filteredNodes]);
 
     const panelCls = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none';
     const headerCls = 'flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5';
@@ -170,6 +184,7 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) =
                                     meta={meta}
                                     nodeCount={nodes.length}
                                     edgeCount={edges.length}
+                                    currentLayer={currentLayer}
                                 />
                             )}
 
@@ -258,7 +273,7 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) =
                             <button
                                 onClick={handleDownloadResults}
                                 className="mt-2 w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                title="Download complete results as CSV"
+                                title={`Download results for ${currentLayer === null ? 'all layers' : `layer ${currentLayer}`} as CSV`}
                             >
                                 <Download size={14} />
                                 Download Enrichment Results

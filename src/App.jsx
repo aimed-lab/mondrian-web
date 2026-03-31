@@ -7,6 +7,7 @@ import AIExplainPanel from './components/AIExplainPanel';
 import { ChevronLeft, Menu, Sparkles, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
+import { getLayerSuffix } from './utils/layerSuffix.js';
 
 function App() {
     // --- Data State ---
@@ -226,11 +227,12 @@ function App() {
                                     onSelectionToggle={(type, id, isMulti) =>
                                         mondrianMapRef.current?.toggleSelection(type, id, isMulti)
                                     }
-                                    selection={{
-                                        nodes: new Set(selectedNodes.map(n => n.id)),
-                                        edges: selectedRelationshipIds
-                                    }}
-                                />
+                                selection={{
+                                    nodes: new Set(selectedNodes.map(n => n.id)),
+                                    edges: selectedRelationshipIds
+                                }}
+                                currentLayer={parameters.selectedLayer}
+                            />
                             </div>
                         </div>
 
@@ -295,7 +297,8 @@ function App() {
 
                                 onClick={() => {
                                     const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                    const filename = `mondrian_map_full_${caseName}.svg`;
+                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                    const filename = `mondrian_map_full_${caseName}${layerSuffix}.svg`;
                                     mondrianMapRef.current?.downloadMap('full', filename);
                                 }}
                                 className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
@@ -318,7 +321,8 @@ function App() {
                                 transition={{ duration: 0.18 }}
                                 onClick={() => {
                                     const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                    const filename = `mondrian_map_selection_${caseName}.svg`;
+                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                    const filename = `mondrian_map_selection_${caseName}${layerSuffix}.svg`;
                                     mondrianMapRef.current?.downloadMap('selection', filename);
                                 }}
                                 className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"

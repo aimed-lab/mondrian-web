@@ -4,7 +4,10 @@ my_asset/
 IMPLEMENTATION_PLAN.md
 *docs
 *docx
-.claude/worktrees/sleepy-burnell
+.claude/
+claude/
+results/
+public/data/go_layers.py
 
 # Python virtual environment
 python/venv/

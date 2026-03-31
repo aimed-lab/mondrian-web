@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { ChevronDown, ChevronUp, Download } from 'lucide-react';
 import sparcLogo from '../assets/sparc_logo.png';
 import { parseLINCSId } from '../utils/parseLINCSId.js';
+import { getLayerSuffix } from '../utils/layerSuffix.js';
 
 // ---------------------------------------------------------------------------
 // ExperimentSummary — renders metadata in a structured, human-readable way.
@@ -70,7 +71,7 @@ function ExperimentSummary({ meta, nodeCount, edgeCount }) {
 
 // ---------------------------------------------------------------------------
 
-const DataTable = ({ layoutJson, onSelectionToggle, selection }) => {
+const DataTable = ({ layoutJson, onSelectionToggle, selection, currentLayer }) => {
     const [isResultsOpen, setIsResultsOpen] = useState(true);
     const [isLegendOpen, setIsLegendOpen] = useState(false);
     const [isReferenceOpen, setIsReferenceOpen] = useState(false);
@@ -135,7 +136,8 @@ const DataTable = ({ layoutJson, onSelectionToggle, selection }) => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}.csv`);
+        const layerSuffix = getLayerSuffix(currentLayer);
+        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${layerSuffix}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

@@ -17,6 +17,7 @@ import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react'
 import { Sparkles, X, AlertCircle, Clock, Minus, RotateCcw, Copy, Check, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAIExplain } from '../hooks/useAIExplain';
+import { getLayerSuffix } from '../utils/layerSuffix.js';
 
 // ---------------------------------------------------------------------------
 // Brand colours — single source of truth, matches the rest of the app
@@ -331,7 +332,8 @@ export default function AIHypothesisPanel({
   const handleDownloadExplanation = useCallback(() => {
     if (!explanation) return;
     const caseName = (metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-    const filename = `ai_hypothesis_${caseName}.md`;
+    const layerSuffix = getLayerSuffix(parameters?.selectedLayer);
+    const filename = `ai_hypothesis_${caseName}${layerSuffix}.md`;
     const blob = new Blob([explanation], { type: 'text/markdown;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');

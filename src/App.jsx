@@ -230,9 +230,9 @@ function App() {
                             {/* Header */}
                             <div className="mb-8">
                                 <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
-                                    Mondrian Map
+                                    MondrianMap
                                 </h1>
-                                <p className="text-gray-500 text-sm mt-0.5">A Modern GO Enrichment Explorer</p>
+                                <p className="text-gray-500 text-sm mt-0.5 leading-relaxed">Navigating gene set hierarchies with multi-resolution maps</p>
                             </div>
 
                             <div className="flex flex-col gap-6">

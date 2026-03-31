@@ -8,6 +8,7 @@ IMPLEMENTATION_PLAN.md
 claude/
 results/
 public/data/go_layers.py
+*pdf
 
 # Python virtual environment
 python/venv/

@@ -330,13 +330,26 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
                 </div>
                 {isReferenceOpen && (
                     <div className="mt-5 pt-5 border-t border-gray-100 text-sm text-gray-600 leading-relaxed animate-in fade-in slide-in-from-top-1 duration-200">
-                        <p className="mb-3">
-                            Al Abir, Fuad, and Jake Y. Chen. "Mondrian Abstraction and Language Model Embeddings for Differential Pathway Analysis." In <em>2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM)</em>, pp. 407–410. IEEE, 2024.
-                        </p>
-                        <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-                            <a href="https://ieeexplore.ieee.org/document/10822686" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors">IEEE Xplore</a>
-                            <a href="https://doi.org/10.1101/2024.04.11.589093" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors">DOI</a>
-                            <a href="https://pubmed.ncbi.nlm.nih.gov/38659966/" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors">PMID: 38659966</a>
+                        <div className="space-y-6">
+                            <div>
+                                <p className="mb-2">
+                                    Al Abir, Fuad, and Jake Y. Chen. "Mondrian Abstraction and Language Model Embeddings for Differential Pathway Analysis." In <em>2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM)</em>, pp. 407–410. IEEE, 2024.
+                                </p>
+                                <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+                                    <a href="https://ieeexplore.ieee.org/document/10822686" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors uppercase text-[10px] font-bold tracking-wider">IEEE Xplore</a>
+                                    <a href="https://doi.org/10.1101/2024.04.11.589093" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors uppercase text-[10px] font-bold tracking-wider">DOI</a>
+                                    <a href="https://pubmed.ncbi.nlm.nih.gov/38659966/" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors uppercase text-[10px] font-bold tracking-wider">PMID</a>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-gray-50">
+                                <p className="mb-2">
+                                    Yue, Z., Welner, R. S., Willey, C. D., Amin, R., Li, Q., Chen, H., and Chen, J. Y. "GOALS: Gene Ontology Analysis with Layered Shells for Enhanced Functional Insight and Visualization." <em>bioRxiv</em> (2025).
+                                </p>
+                                <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+                                    <a href="https://doi.org/10.1101/2025.04.22.650095" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-black hover:underline transition-colors uppercase text-[10px] font-bold tracking-wider">DOI</a>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -345,6 +358,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
             {/* FOOTER */}
             <div className="mt-auto pt-5 pb-2 flex flex-col items-center justify-center gap-4 border-t border-gray-200 text-center">
                 <div className="text-xs text-gray-500 space-y-1">
+                    {/* <p>A Tribute to <a href="https://en.wikipedia.org/wiki/Piet_Mondrian" target="_blank" rel="noopener noreferrer" className="underline hover:text-black">Piet Mondrian</a></p> */}
                     <p>Free and open to all users. No login required. No cookies.</p>
                     <p>Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" className="underline hover:text-black">CC BY 4.0</a></p>
                 </div>

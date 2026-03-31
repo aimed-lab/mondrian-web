@@ -7,6 +7,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { buildPrompt } from "../utils/promptBuilder";
+import { CONFIG } from "../config";
 
 /** Netlify function endpoint */
 const ENDPOINT = "/.netlify/functions/ai-explain";
@@ -26,7 +27,7 @@ export function useAIExplain() {
   const [explanation, setExplanation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [remaining, setRemaining] = useState(5);
+  const [remaining, setRemaining] = useState(CONFIG.HOURLY_REQUEST_LIMIT);
   const [resetAt, setResetAt] = useState(null);
 
   // Cache keyed by sorted selected-node IDs → avoids duplicate API calls

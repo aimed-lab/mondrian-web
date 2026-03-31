@@ -18,6 +18,7 @@ import { Sparkles, X, AlertCircle, Clock, Minus, RotateCcw, Copy, Check, Downloa
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAIExplain } from '../hooks/useAIExplain';
 import { getLayerSuffix } from '../utils/layerSuffix.js';
+import { CONFIG } from '../config.js';
 
 // ---------------------------------------------------------------------------
 // Brand colours — single source of truth, matches the rest of the app
@@ -250,7 +251,7 @@ function CrosstalksList({ edges }) {
   );
 }
 
-/** Shown when the user has used all 5 requests */
+/** Shown when the user has used all requests */
 function LimitReachedNotice({ resetAt }) {
   const minutesLeft = resetAt ? Math.max(1, Math.ceil((resetAt - Date.now()) / 60_000)) : null;
   return (
@@ -263,7 +264,7 @@ function LimitReachedNotice({ resetAt }) {
       </div>
       <div className="px-3 py-2.5">
         <p className="text-xs" style={{ color: '#374151' }}>
-          You've used 5 hourly requests for this session.
+          You've used {CONFIG.HOURLY_REQUEST_LIMIT} hourly requests for this session.
           {minutesLeft && (
             <> Resets in approximately <span className="font-semibold">{minutesLeft} minute{minutesLeft > 1 ? 's' : ''}</span>.</>
           )}

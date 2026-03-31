@@ -1,3 +1,5 @@
+import { CONFIG } from '../../config.js';
+
 /**
  * Sliding-window rate limiter.
  *
@@ -11,10 +13,10 @@
 export class RateLimiter {
   /**
    * @param {object} [opts]
-   * @param {number} [opts.max=5]          Max requests per window.
+   * @param {number} [opts.max]            Max requests per window.
    * @param {number} [opts.windowMs=3600000] Window duration in ms.
    */
-  constructor({ max = 5, windowMs = 60 * 60 * 1000 } = {}) {
+  constructor({ max = CONFIG.HOURLY_REQUEST_LIMIT, windowMs = 60 * 60 * 1000 } = {}) {
     this.max = max;
     this.windowMs = windowMs;
     /** @type {Map<string, { count: number, windowStart: number }>} */

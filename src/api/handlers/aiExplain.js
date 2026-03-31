@@ -15,6 +15,7 @@
 
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import { callOpenAI, OpenAIError } from '../services/openai.js';
+import { CONFIG } from '../../config.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,14 +128,14 @@ export async function handleAIExplain({ method, headers, rawBody }) {
   const rate = rateLimiter.check(id);
 
   const rateHeaders = {
-    'X-RateLimit-Limit':     '5',
+    'X-RateLimit-Limit':     String(CONFIG.HOURLY_REQUEST_LIMIT),
     'X-RateLimit-Remaining': String(rate.remaining),
     'X-RateLimit-Reset':     String(rate.resetAt),
   };
 
   if (!rate.allowed) {
     return json(429, {
-      error:     'Rate limit exceeded. Maximum 5 AI explanations per hour.',
+      error:     `Rate limit exceeded. Maximum ${CONFIG.HOURLY_REQUEST_LIMIT} AI explanations per hour.`,
       remaining: 0,
       resetAt:   rate.resetAt,
     }, rateHeaders);

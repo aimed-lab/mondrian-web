@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 import { getLayerSuffix } from './utils/layerSuffix.js';
 import JSZip from 'jszip';
+import InfoPanel from './components/InfoPanel';
 
 function App() {
     // --- Data State ---
@@ -19,7 +20,6 @@ function App() {
 
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
-    const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
     // --- AI Explain: nodes currently selected on the Mondrian Map ---
     const [selectedNodes, setSelectedNodes] = useState([]);
@@ -114,16 +114,11 @@ function App() {
     }, []);
 
     // --- AI Explain: receive selection updates from MondrianMap ---
-    // Closes the panel automatically when the user deselects everything,
-    // enforcing the rule that AI Explain only exists in selection mode.
     const handleSelectionChange = useCallback((selectedEntities, rawSelection) => {
         setSelectedNodes(selectedEntities);
         // Propagate the exact relationship-ID set so AIHypothesisPanel can filter
         // crosstalks to only those explicitly part of the selection.
         setSelectedRelationshipIds(rawSelection?.relationships ?? new Set());
-        if (selectedEntities.length === 0) {
-            setIsAIPanelOpen(false);
-        }
     }, []);
 
     // --- Derived: available layers ---
@@ -221,12 +216,12 @@ function App() {
                 {isPanelOpen && (
                     <motion.div
                         initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: "500px", opacity: 1 }}
+                        animate={{ width: "450px", opacity: 1 }}
                         exit={{ width: 0, opacity: 0 }}
                         transition={{ duration: 0.3, ease: "easeInOut" }}
                         className="h-full bg-white shadow-xl z-20 flex flex-col border-r border-gray-200 relative shrink-0"
                     >
-                        <div className="w-[500px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
+                        <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
                             {/* Header */}
                             <div className="mb-8">
                                 <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -256,7 +251,6 @@ function App() {
                                     </div>
                                 )}
 
-                                {/* Parameter Controls */}
                                 <ParameterControls
                                     parameters={parameters}
                                     onParametersChange={handleParametersChange}
@@ -266,23 +260,10 @@ function App() {
                                     layerNodeCounts={layerNodeCounts}
                                     layerEdgeCounts={layerEdgeCounts}
                                 />
-
-                                <hr className="border-gray-100" />
-
-                                <DataTable
-                                    layoutJson={layoutJson}
-                                    filteredNodes={entities}
-                                    filteredEdges={relationships}
-                                    onSelectionToggle={(type, id, isMulti) =>
-                                        mondrianMapRef.current?.toggleSelection(type, id, isMulti)
-                                    }
-                                    selection={{
-                                        nodes: new Set(selectedNodes.map(n => n.id)),
-                                        edges: selectedRelationshipIds
-                                    }}
-                                    currentLayer={parameters.selectedLayer}
-                                />
                             </div>
+                            
+                            {/* Static Information Panels (Description, Reference, Footer) */}
+                            <InfoPanel />
                         </div>
 
                         {/* Collapse toggle */}
@@ -297,16 +278,8 @@ function App() {
                 )}
             </AnimatePresence>
 
-            {/* Main Content Area — shifts right padding to match the AI panel so
-                the map always stays centred between the two panels. The
-                MondrianMap's ResizeObserver picks this up automatically. */}
-            <div
-                className="flex-1 relative h-full"
-                style={{
-                    paddingRight: isAIPanelOpen ? '440px' : '0',
-                    transition: 'padding-right 0.25s ease-in-out',
-                }}
-            >
+            {/* Main Content Area */}
+            <div className="flex-1 relative h-full min-w-0">
                 <AnimatePresence>
                     {!isPanelOpen && (
                         <motion.button
@@ -393,40 +366,48 @@ function App() {
                                 <Download size={14} />
                                 Download Mondrian Map (Selected)
                             </motion.button>
-
-                            {!isAIPanelOpen && (
-                                <motion.button
-                                    key="ai-hypothesis-btn"
-                                    initial={{ opacity: 0, y: 8 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 8 }}
-                                    transition={{ duration: 0.18, delay: 0.05 }}
-                                    onClick={() => setIsAIPanelOpen(true)}
-                                    className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
-                                    title={`Generate AI hypothesis for ${selectedNodes.length} selected term${selectedNodes.length > 1 ? 's' : ''}`}
-                                >
-                                    <Sparkles size={14} className="animate-pulse" />
-                                    Generate AI Hypothesis
-                                    <span className="ml-1 bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5">
-                                        {selectedNodes.length}
-                                    </span>
-                                </motion.button>
-                            )}
                         </AnimatePresence>
                     )}
                 </div>
-
-                {/* AI Explain slide-out panel */}
-                <AIExplainPanel
-                    isOpen={isAIPanelOpen}
-                    onClose={() => setIsAIPanelOpen(false)}
-                    selectedNodes={selectedNodes}
-                    selectedRelationshipIds={selectedRelationshipIds}
-                    allEdges={relationships}
-                    metadata={layoutJson?.metadata || {}}
-                    parameters={parameters}
-                />
             </div>
+
+            {/* Right Sidebar for Enrichment Results & AI Explain */}
+            <AnimatePresence mode='wait'>
+                {layoutJson && (
+                    <motion.div
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{ width: isPanelOpen ? "506px" : "40vw", opacity: 1 }}
+                        exit={{ width: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: "easeInOut" }}
+                        className="h-full bg-gray-50 shadow-xl z-20 flex flex-col border-l border-gray-200 relative shrink-0 overflow-hidden"
+                    >
+                        <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12">
+                            <DataTable
+                                layoutJson={layoutJson}
+                                filteredNodes={entities}
+                                filteredEdges={relationships}
+                                onSelectionToggle={(type, id, isMulti) =>
+                                    mondrianMapRef.current?.toggleSelection(type, id, isMulti)
+                                }
+                                selection={{
+                                    nodes: new Set(selectedNodes.map(n => n.id)),
+                                    edges: selectedRelationshipIds
+                                }}
+                                currentLayer={parameters.selectedLayer}
+                                aiSection={
+                                    <AIExplainPanel
+                                        selectedNodes={selectedNodes}
+                                        selectedRelationshipIds={selectedRelationshipIds}
+                                        allEdges={relationships}
+                                        metadata={layoutJson?.metadata || {}}
+                                        parameters={parameters}
+                                    />
+                                }
+                            />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

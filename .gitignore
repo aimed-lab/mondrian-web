@@ -9,6 +9,7 @@ claude/
 results/
 public/data/go_layers.py
 *pdf
+*mjs
 
 # Python virtual environment
 python/venv/

@@ -56,7 +56,13 @@ export async function loadLibrary(libraryId) {
 async function loadUmapLookup() {
     if (_umapLookup) return _umapLookup;
     try {
-        const res = await fetch('/data/go_embeddings_umap.csv');
+        // Prefer hierarchical embeddings (parent-child locality preserved)
+        // Falls back to original UMAP if hierarchical not available
+        let res = await fetch('/data/go_embeddings_hierarchical.csv');
+        if (!res.ok) {
+            console.log('[Pipeline] Hierarchical embeddings not found, falling back to UMAP...');
+            res = await fetch('/data/go_embeddings_umap.csv');
+        }
         if (!res.ok) throw new Error('not found');
         const text = await res.text();
         const lines = text.trim().split('\n');
@@ -390,11 +396,13 @@ function hashPosition(goId) {
  */
 export async function isOfflineAvailable() {
     try {
-        const [indexRes, umapRes] = await Promise.all([
+        const [indexRes, hierRes, umapRes] = await Promise.all([
             fetch('/data/library_index.json', { method: 'HEAD' }),
+            fetch('/data/go_embeddings_hierarchical.csv', { method: 'HEAD' }),
             fetch('/data/go_embeddings_umap.csv', { method: 'HEAD' }),
         ]);
-        return indexRes.ok && umapRes.ok;
+        // Need index + at least one embedding file
+        return indexRes.ok && (hierRes.ok || umapRes.ok);
     } catch {
         return false;
     }

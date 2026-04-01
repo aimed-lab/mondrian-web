@@ -157,7 +157,8 @@ const ParameterControls = ({
     }, [parameters, onParametersChange, availableSet, layerNodeCounts, layerEdgeCounts, nodeCount, edgeCount]);
 
     const handleReset = useCallback(() => {
-        const defaultLayer = availableLayers.length > 0 ? availableLayers[0] : null;
+        // Reset to highest (root-like) layer for Google Maps zoom experience
+        const defaultLayer = availableLayers.length > 0 ? availableLayers[availableLayers.length - 1] : null;
         const nc = layerNodeCounts[defaultLayer] ?? nodeCount;
         const ec = layerEdgeCounts[defaultLayer] ?? edgeCount;
         onParametersChange({ ...DEFAULTS, selectedLayer: defaultLayer, maxBlocks: nc, maxEdges: ec });
@@ -191,41 +192,7 @@ const ParameterControls = ({
             {open && (
                 <div className="mt-5 pt-5 border-t border-gray-100 flex flex-col gap-6">
 
-                    {/* ── GO Hierarchy Layer ── */}
-                    <div className="flex flex-col gap-3">
-                        <div className="flex justify-between items-center">
-                            <label className="text-sm font-semibold text-gray-900">GO Hierarchy Layer</label>
-                            <span className="text-sm font-mono text-gray-600">
-                                {currentLayer === null ? 'All Layers' : `Layer ${currentLayer}`}
-                            </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            {allLayerNums.map(layer => (
-                                <button
-                                    key={layer}
-                                    disabled={!availableSet.has(layer)}
-                                    onClick={() => handleLayerClick(layer)}
-                                    className={layerBtnCls(layer)}
-                                    title={!availableSet.has(layer) ? 'No GO terms in this layer' : `Show Layer ${layer}`}
-                                >
-                                    {layer}
-                                </button>
-                            ))}
-                            <button
-                                disabled={availableLayers.length === 0}
-                                onClick={() => handleLayerClick(null)}
-                                className={layerBtnCls(null)}
-                                title="Show all hierarchy layers"
-                            >
-                                All
-                            </button>
-                        </div>
-                        {availableLayers.length === 0 && (
-                            <p className="text-xs text-gray-500 italic">Run an enrichment analysis to see layers.</p>
-                        )}
-                    </div>
-
-                    {sep}
+                    {/* GO Hierarchy Layer control has been moved to the map sidebar (LayerZoomControl) */}
 
                     <div className="flex border-b border-gray-200 -mt-2">
                         <button

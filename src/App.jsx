@@ -4,7 +4,8 @@ import DataTable from './components/DataTable';
 import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
 import AIExplainPanel from './components/AIExplainPanel';
-import { ChevronLeft, Menu, Sparkles, Download, Archive } from 'lucide-react';
+import LayerZoomControl from './components/LayerZoomControl';
+import { ChevronLeft, ChevronRight, Menu, Sparkles, Download, Archive } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 import { getLayerSuffix } from './utils/layerSuffix.js';
@@ -20,6 +21,7 @@ function App() {
 
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
+    const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
 
     // --- AI Explain: nodes currently selected on the Mondrian Map ---
     const [selectedNodes, setSelectedNodes] = useState([]);
@@ -44,7 +46,8 @@ function App() {
         setInfo(null);
 
         const layers = getAvailableLayers(json);
-        const defaultLayer = layers.length > 0 ? layers[0] : null;
+        // Start at the highest (root-like) layer for the Google Maps zoom experience
+        const defaultLayer = layers.length > 0 ? layers[layers.length - 1] : null;
 
         // Compute per-layer counts at default p-value cutoff
         const nc = countNodesForLayer(json, defaultLayer, baseParams.pValueCutoff);
@@ -163,6 +166,52 @@ function App() {
         return mapRealDataToEntities(layoutJson, parameters);
     }, [layoutJson, parameters]);
 
+    // --- Layer zoom handler (for both scroll wheel and +/- buttons) ---
+    const handleLayerZoom = useCallback((direction) => {
+        // direction: +1 = zoom out (higher layer), -1 = zoom in (lower layer)
+        if (!availableLayers || availableLayers.length === 0) return;
+        const current = parameters.selectedLayer;
+        const sortedLayers = [...availableLayers].sort((a, b) => a - b);
+
+        if (current === null) {
+            // From "All": zoom in → go to highest available layer
+            if (direction === -1 && sortedLayers.length > 0) {
+                const newLayer = sortedLayers[sortedLayers.length - 1];
+                const nc = layerNodeCounts[newLayer] ?? 0;
+                const ec = layerEdgeCounts[newLayer] ?? 0;
+                setParameters(prev => ({ ...prev, selectedLayer: newLayer, maxBlocks: nc, maxEdges: ec }));
+            }
+            return;
+        }
+
+        const idx = sortedLayers.indexOf(current);
+        if (idx === -1) return;
+
+        const newIdx = idx + direction;
+        if (newIdx < 0 || newIdx >= sortedLayers.length) return;
+
+        const newLayer = sortedLayers[newIdx];
+        const nc = layerNodeCounts[newLayer] ?? 0;
+        const ec = layerEdgeCounts[newLayer] ?? 0;
+        setParameters(prev => ({
+            ...prev,
+            selectedLayer: newLayer,
+            maxBlocks: nc,
+            maxEdges: ec,
+        }));
+    }, [availableLayers, parameters.selectedLayer, layerNodeCounts, layerEdgeCounts]);
+
+    const handleLayerChange = useCallback((newLayer) => {
+        const nc = layerNodeCounts[newLayer] ?? 0;
+        const ec = layerEdgeCounts[newLayer] ?? 0;
+        setParameters(prev => ({
+            ...prev,
+            selectedLayer: newLayer,
+            maxBlocks: nc,
+            maxEdges: ec,
+        }));
+    }, [layerNodeCounts, layerEdgeCounts]);
+
     const handleDownloadAllLayersZip = async () => {
         if (!layoutJson || !mondrianMapRef.current) return;
         const zip = new JSZip();
@@ -211,78 +260,80 @@ function App() {
 
     return (
         <div className="h-screen w-screen overflow-hidden bg-gray-50 flex font-sans">
-            {/* Collapsible Sidebar */}
-            <AnimatePresence mode='wait'>
+            {/* Collapsible Left Sidebar — always mounted to preserve internal state */}
+            <motion.div
+                initial={false}
+                animate={{
+                    width: isPanelOpen ? 450 : 0,
+                    opacity: isPanelOpen ? 1 : 0,
+                }}
+                transition={{ duration: 0.3, ease: "easeInOut" }}
+                className="h-full bg-white shadow-xl z-20 flex flex-col border-r border-gray-200 relative shrink-0"
+                style={{ overflow: 'hidden' }}
+            >
+                <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
+                    {/* Header */}
+                    <div className="mb-8">
+                        <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
+                            MondrianMap
+                        </h1>
+                        <p className="text-gray-500 text-sm mt-0.5 leading-relaxed">Navigating gene set hierarchies with multi-resolution maps</p>
+                    </div>
+
+                    <div className="flex flex-col gap-6">
+                        {/* Gene Set Input */}
+                        <GeneSetInput
+                            onRunAnalysis={handleRunAnalysis}
+                            isLoading={isLoading}
+                        />
+
+                        {/* Error message */}
+                        {error && (
+                            <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-none">
+                                <span className="font-bold">Error:</span> {error}
+                            </div>
+                        )}
+
+                        {/* Info message (no results, etc.) */}
+                        {info && !error && (
+                            <div className="bg-gray-50 border border-gray-200 text-gray-600 text-xs px-3 py-2 rounded-none">
+                                {info}
+                            </div>
+                        )}
+
+                        <ParameterControls
+                            parameters={parameters}
+                            onParametersChange={handleParametersChange}
+                            nodeCount={totalNodeCount}
+                            edgeCount={totalEdgeCount}
+                            availableLayers={availableLayers}
+                            layerNodeCounts={layerNodeCounts}
+                            layerEdgeCounts={layerEdgeCounts}
+                        />
+                    </div>
+
+                    {/* Static Information Panels (Description, Reference, Footer) */}
+                    <InfoPanel />
+                </div>
+
+                {/* Collapse toggle — only visible when panel is open */}
                 {isPanelOpen && (
-                    <motion.div
-                        initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: "450px", opacity: 1 }}
-                        exit={{ width: 0, opacity: 0 }}
-                        transition={{ duration: 0.3, ease: "easeInOut" }}
-                        className="h-full bg-white shadow-xl z-20 flex flex-col border-r border-gray-200 relative shrink-0"
+                    <button
+                        onClick={() => setIsPanelOpen(false)}
+                        className="absolute top-1/2 -right-3 transform -translate-y-1/2 bg-white border border-gray-200 shadow-md rounded-full p-1 hover:bg-gray-50 z-30"
+                        title="Collapse sidebar"
                     >
-                        <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
-                            {/* Header */}
-                            <div className="mb-8">
-                                <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
-                                    MondrianMap
-                                </h1>
-                                <p className="text-gray-500 text-sm mt-0.5 leading-relaxed">Navigating gene set hierarchies with multi-resolution maps</p>
-                            </div>
-
-                            <div className="flex flex-col gap-6">
-                                {/* Gene Set Input */}
-                                <GeneSetInput
-                                    onRunAnalysis={handleRunAnalysis}
-                                    isLoading={isLoading}
-                                />
-
-                                {/* Error message */}
-                                {error && (
-                                    <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-none">
-                                        <span className="font-bold">Error:</span> {error}
-                                    </div>
-                                )}
-
-                                {/* Info message (no results, etc.) */}
-                                {info && !error && (
-                                    <div className="bg-gray-50 border border-gray-200 text-gray-600 text-xs px-3 py-2 rounded-none">
-                                        {info}
-                                    </div>
-                                )}
-
-                                <ParameterControls
-                                    parameters={parameters}
-                                    onParametersChange={handleParametersChange}
-                                    nodeCount={totalNodeCount}
-                                    edgeCount={totalEdgeCount}
-                                    availableLayers={availableLayers}
-                                    layerNodeCounts={layerNodeCounts}
-                                    layerEdgeCounts={layerEdgeCounts}
-                                />
-                            </div>
-                            
-                            {/* Static Information Panels (Description, Reference, Footer) */}
-                            <InfoPanel />
-                        </div>
-
-                        {/* Collapse toggle */}
-                        <button
-                            onClick={() => setIsPanelOpen(false)}
-                            className="absolute top-1/2 -right-3 transform -translate-y-1/2 bg-white border border-gray-200 shadow-md rounded-full p-1 hover:bg-gray-50 z-30"
-                            title="Collapse sidebar"
-                        >
-                            <ChevronLeft size={16} />
-                        </button>
-                    </motion.div>
+                        <ChevronLeft size={16} />
+                    </button>
                 )}
-            </AnimatePresence>
+            </motion.div>
 
             {/* Main Content Area */}
             <div className="flex-1 relative h-full min-w-0">
                 <AnimatePresence>
                     {!isPanelOpen && (
                         <motion.button
+                            key="open-left"
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: -20 }}
@@ -290,6 +341,19 @@ function App() {
                             className="absolute top-6 left-6 z-10 bg-white p-3 rounded-md shadow-lg hover:bg-gray-50 text-gray-700"
                         >
                             <Menu size={24} />
+                        </motion.button>
+                    )}
+                    {layoutJson && !isRightPanelOpen && (
+                        <motion.button
+                            key="open-right"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                            onClick={() => setIsRightPanelOpen(true)}
+                            className="absolute top-6 right-6 z-10 bg-white p-3 rounded-md shadow-lg hover:bg-gray-50 text-gray-700"
+                            title="Show results panel"
+                        >
+                            <ChevronLeft size={24} />
                         </motion.button>
                     )}
                 </AnimatePresence>
@@ -303,7 +367,21 @@ function App() {
                     parameters={parameters}
                     isLoading={isLoading}
                     onSelectionChange={handleSelectionChange}
+                    onLayerZoom={handleLayerZoom}
                 />
+
+                {/* Layer Zoom Control — right side of map, vertically centered */}
+                {layoutJson && availableLayers.length > 0 && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
+                        <LayerZoomControl
+                            currentLayer={parameters.selectedLayer}
+                            availableLayers={availableLayers}
+                            onLayerChange={handleLayerChange}
+                            allLayers={Math.max(...availableLayers)}
+                            defaultLayer={Math.max(...availableLayers)}
+                        />
+                    </div>
+                )}
 
                 {/* ── Bottom-right button stack ── */}
                 <div className="absolute bottom-6 right-6 z-10 flex flex-col items-stretch gap-2">
@@ -371,43 +449,55 @@ function App() {
                 </div>
             </div>
 
-            {/* Right Sidebar for Enrichment Results & AI Explain */}
-            <AnimatePresence mode='wait'>
-                {layoutJson && (
-                    <motion.div
-                        initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: isPanelOpen ? "506px" : "40vw", opacity: 1 }}
-                        exit={{ width: 0, opacity: 0 }}
-                        transition={{ duration: 0.3, ease: "easeInOut" }}
-                        className="h-full bg-gray-50 shadow-xl z-20 flex flex-col border-l border-gray-200 relative shrink-0 overflow-hidden"
-                    >
-                        <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12">
-                            <DataTable
-                                layoutJson={layoutJson}
-                                filteredNodes={entities}
-                                filteredEdges={relationships}
-                                onSelectionToggle={(type, id, isMulti) =>
-                                    mondrianMapRef.current?.toggleSelection(type, id, isMulti)
-                                }
-                                selection={{
-                                    nodes: new Set(selectedNodes.map(n => n.id)),
-                                    edges: selectedRelationshipIds
-                                }}
-                                currentLayer={parameters.selectedLayer}
-                                aiSection={
-                                    <AIExplainPanel
-                                        selectedNodes={selectedNodes}
-                                        selectedRelationshipIds={selectedRelationshipIds}
-                                        allEdges={relationships}
-                                        metadata={layoutJson?.metadata || {}}
-                                        parameters={parameters}
-                                    />
-                                }
-                            />
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Right Sidebar for Enrichment Results & AI Explain — always mounted when data exists */}
+            {layoutJson && (
+                <motion.div
+                    initial={false}
+                    animate={{
+                        width: isRightPanelOpen ? (isPanelOpen ? 506 : '40vw') : 0,
+                        opacity: isRightPanelOpen ? 1 : 0,
+                    }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="h-full bg-gray-50 shadow-xl z-20 flex flex-col border-l border-gray-200 relative shrink-0"
+                    style={{ overflow: 'hidden' }}
+                >
+                    {/* Collapse toggle — only visible when panel is open */}
+                    {isRightPanelOpen && (
+                        <button
+                            onClick={() => setIsRightPanelOpen(false)}
+                            className="absolute top-1/2 -left-3 transform -translate-y-1/2 bg-white border border-gray-200 shadow-md rounded-full p-1 hover:bg-gray-50 z-30"
+                            title="Collapse results panel"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                    )}
+
+                    <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
+                        <DataTable
+                            layoutJson={layoutJson}
+                            filteredNodes={entities}
+                            filteredEdges={relationships}
+                            onSelectionToggle={(type, id, isMulti) =>
+                                mondrianMapRef.current?.toggleSelection(type, id, isMulti)
+                            }
+                            selection={{
+                                nodes: new Set(selectedNodes.map(n => n.id)),
+                                edges: selectedRelationshipIds
+                            }}
+                            currentLayer={parameters.selectedLayer}
+                            aiSection={
+                                <AIExplainPanel
+                                    selectedNodes={selectedNodes}
+                                    selectedRelationshipIds={selectedRelationshipIds}
+                                    allEdges={relationships}
+                                    metadata={layoutJson?.metadata || {}}
+                                    parameters={parameters}
+                                />
+                            }
+                        />
+                    </div>
+                </motion.div>
+            )}
         </div>
     );
 }

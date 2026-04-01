@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
 
-const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, dataSource = 'real', isLoading = false, onSelectionChange = null }, ref) {
+const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null }, ref) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const [selection, setSelection] = useState({ entities: new Set(), relationships: new Set() });
@@ -432,12 +432,52 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     }, [relationships, width, height, selection, getEntityContext, getEdgeContext, generateMondrianLines, getBlockDims, getColor, isRealData]);
 
     // --- Render & Zoom ---
+    // Debounce ref for layer-zoom via scroll wheel
+    const layerZoomTimerRef = useRef(null);
+    const lastLayerZoomRef = useRef(0);
+
     useEffect(() => {
         if (!layoutEntities || layoutEntities.length === 0 || !relationships) return;
         const svg = d3.select(svgRef.current);
         const contentGroup = drawMap(svg, { drawEntities: layoutEntities, drawRelationships: relationships, config: { selectionState: selection } }, true);
-        const zoom = d3.zoom().scaleExtent([0.1, 5]).on("zoom", (event) => contentGroup.attr("transform", event.transform));
+
+        // Within-layer zoom (only active when Ctrl is held)
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 5])
+            .filter((event) => {
+                // Allow all non-wheel events (pan, pinch, etc.)
+                if (event.type !== 'wheel') return true;
+                // For wheel events: only allow zoom when Ctrl is held
+                return event.ctrlKey || event.metaKey;
+            })
+            .on("zoom", (event) => contentGroup.attr("transform", event.transform));
         svg.call(zoom);
+
+        // Layer-based zoom via scroll wheel (default, without Ctrl)
+        const handleWheel = (event) => {
+            // Only handle when Ctrl is NOT held (Ctrl+scroll is within-layer zoom)
+            if (event.ctrlKey || event.metaKey) return;
+            // Prevent default page scroll
+            event.preventDefault();
+
+            if (!onLayerZoom) return;
+
+            // Debounce: only fire once per 250ms
+            const now = Date.now();
+            if (now - lastLayerZoomRef.current < 250) return;
+            lastLayerZoomRef.current = now;
+
+            // deltaY > 0 = scroll down = zoom out = higher layer
+            // deltaY < 0 = scroll up = zoom in = lower layer
+            const direction = event.deltaY > 0 ? 1 : -1;
+            onLayerZoom(direction);
+        };
+
+        const svgEl = svgRef.current;
+        if (svgEl) {
+            svgEl.addEventListener('wheel', handleWheel, { passive: false });
+        }
+
         const centerMap = () => {
             if (!containerRef.current) return;
             const cw = containerRef.current.clientWidth;
@@ -451,8 +491,11 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         centerMap();
         const resizeObserver = new ResizeObserver(() => centerMap());
         if (containerRef.current) resizeObserver.observe(containerRef.current);
-        return () => resizeObserver.disconnect();
-    }, [layoutEntities, relationships, width, height, selection, drawMap]);
+        return () => {
+            resizeObserver.disconnect();
+            if (svgEl) svgEl.removeEventListener('wheel', handleWheel);
+        };
+    }, [layoutEntities, relationships, width, height, selection, drawMap, onLayerZoom]);
 
     // --- SVG Export ---
     const getSVGContent = useCallback((mode, customEntities = null, customRelationships = null) => {

@@ -371,25 +371,27 @@ function App() {
                     onLayerZoom={handleLayerZoom}
                 />
 
-                {/* Layer Zoom Control — right side of map, vertically centered */}
-                {layoutJson && availableLayers.length > 0 && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
-                        <LayerZoomControl
-                            currentLayer={parameters.selectedLayer}
-                            availableLayers={availableLayers}
-                            onLayerChange={handleLayerChange}
-                            allLayers={Math.max(...availableLayers)}
-                            defaultLayer={Math.max(...availableLayers)}
-                        />
-                    </div>
-                )}
+                {/* ── Bottom-right Interaction Stack ── */}
+                <div className="absolute bottom-6 right-6 z-10 flex flex-col items-end gap-3 pointer-events-none">
+                    {/* Layer Zoom Control — right side of map, vertically centered previously, now on top of downloads */}
+                    {layoutJson && availableLayers.length > 0 && (
+                        <div className="pointer-events-auto">
+                            <LayerZoomControl
+                                currentLayer={parameters.selectedLayer}
+                                availableLayers={availableLayers}
+                                onLayerChange={handleLayerChange}
+                                allLayers={Math.max(...availableLayers)}
+                                defaultLayer={Math.max(...availableLayers)}
+                            />
+                        </div>
+                    )}
 
-                {/* ── Bottom-right button stack ── */}
-                <div className="absolute bottom-6 right-6 z-10 flex flex-col items-stretch gap-2">
-                    {/* Standard downloads (hidden in selection mode) */}
-                    {!isSelectionActive && layoutJson && (
-                        <AnimatePresence>
-                            <motion.button
+                    {/* Bottom-right button stack */}
+                    <div className="flex flex-col items-stretch gap-2 w-full pointer-events-auto">
+                        {/* Standard downloads (hidden in selection mode) */}
+                        {!isSelectionActive && layoutJson && (
+                            <AnimatePresence>
+                                <motion.button
                                 key="dl-full"
                                 initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -447,6 +449,7 @@ function App() {
                             </motion.button>
                         </AnimatePresence>
                     )}
+                    </div>
                 </div>
             </div>
 

@@ -354,7 +354,7 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
                 className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-bold transition-colors rounded-none text-sm tracking-wider uppercase"
             >
                 <Play size={14} />
-                {isLoading ? 'Running...' : 'Visualize'}
+                {isLoading ? 'Running...' : 'Run Enrichment Analysis'}
             </button>
         </div>
     );
@@ -395,7 +395,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
             {/* Upregulated genes */}
             <div>
                 <div className="flex justify-between items-center mb-1.5">
-                    <label className={labelCls}>Upregulated Genes</label>
+                    <label className={`${labelCls} mb-0`}>Upregulated Genes</label>
                     {upGenes.length > 0 && (
                         <span className="text-xs font-medium text-gray-500">{upGenes.length} genes</span>
                     )}
@@ -414,7 +414,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
             {/* Downregulated genes */}
             <div>
                 <div className="flex justify-between items-center mb-1.5">
-                    <label className={labelCls}>Downregulated Genes</label>
+                    <label className={`${labelCls} mb-0`}>Downregulated Genes</label>
                     {downGenes.length > 0 && (
                         <span className="text-xs font-medium text-gray-500">{downGenes.length} genes</span>
                     )}
@@ -428,6 +428,19 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                     onKeyDown={handleKeyDown}
                     disabled={isLoading}
                 />
+            </div>
+
+            <div className="flex justify-end -mt-2">
+                <button
+                    onClick={() => {
+                        setUpText("ATP6V0B, BANF1, BSG, BST2, BZW1, C14orf2, C19orf43, CALM1, CALM3, CALR, CAP1, CCND3, CCT3");
+                        setDownText("CCT6A, CCT7, CCT8, CD53, CD63, CFL1, CKB, CKS1B, CLIC1, CMTM6, CNN2");
+                    }}
+                    className="text-[10px] text-gray-500 hover:text-black font-bold underline tracking-wider transition-colors"
+                    title="Load example differentially expressed genes for testing"
+                >
+                    Example DEGs
+                </button>
             </div>
 
             {/* Library */}
@@ -474,7 +487,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                 <Play size={14} />
                 {isLoading
                     ? 'Running...'
-                    : `Run Enrichment Analysis${totalGenes > 0 ? ` (${totalGenes} genes)` : ''}`}
+                    : `Run Enrichment Analysis`}
             </button>
         </div>
     );

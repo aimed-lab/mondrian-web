@@ -269,9 +269,10 @@ function App() {
                 }}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
                 className="h-full bg-white shadow-xl z-20 flex flex-col border-r border-gray-200 relative shrink-0"
-                style={{ overflow: 'hidden' }}
+                style={{ overflow: 'visible' }}
             >
-                <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
+                <div className="w-full h-full overflow-hidden">
+                    <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
                     {/* Header */}
                     <div className="mb-8">
                         <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -312,8 +313,8 @@ function App() {
                         />
                     </div>
 
-                    {/* Static Information Panels (Description, Reference, Footer) */}
                     <InfoPanel />
+                    </div>
                 </div>
 
                 {/* Collapse toggle — only visible when panel is open */}
@@ -459,7 +460,7 @@ function App() {
                     }}
                     transition={{ duration: 0.3, ease: "easeInOut" }}
                     className="h-full bg-gray-50 shadow-xl z-20 flex flex-col border-l border-gray-200 relative shrink-0"
-                    style={{ overflow: 'hidden' }}
+                    style={{ overflow: 'visible' }}
                 >
                     {/* Collapse toggle — only visible when panel is open */}
                     {isRightPanelOpen && (
@@ -472,7 +473,8 @@ function App() {
                         </button>
                     )}
 
-                    <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
+                    <div className="w-full h-full overflow-hidden">
+                        <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
                         <DataTable
                             layoutJson={layoutJson}
                             filteredNodes={entities}
@@ -495,6 +497,7 @@ function App() {
                                 />
                             }
                         />
+                        </div>
                     </div>
                 </motion.div>
             )}

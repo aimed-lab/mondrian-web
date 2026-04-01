@@ -231,11 +231,20 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const relatedEdges = relationships.filter(r => r.source === entityId || r.target === entityId);
         const relatedEntityIds = new Set([entityId]);
         const relatedEdgeIds = new Set();
+        
+        // Add all nodes in the 1-degree neighborhood
         relatedEdges.forEach(r => {
-            relatedEdgeIds.add(`${r.source}-${r.target}`);
             relatedEntityIds.add(r.source);
             relatedEntityIds.add(r.target);
         });
+
+        // Add all existing edges between any nodes within this 1-degree neighborhood
+        relationships.forEach(r => {
+            if (relatedEntityIds.has(r.source) && relatedEntityIds.has(r.target)) {
+                relatedEdgeIds.add(`${r.source}-${r.target}`);
+            }
+        });
+
         return { entities: relatedEntityIds, relationships: relatedEdgeIds };
     }, [relationships]);
 

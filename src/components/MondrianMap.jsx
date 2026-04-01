@@ -477,9 +477,9 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             lastLayerZoomRef.current = now;
 
             // Reversed direction:
-            // deltaY > 0 = scroll down = zoom in = lower layer
-            // deltaY < 0 = scroll up = zoom out = higher layer
-            const direction = event.deltaY > 0 ? -1 : 1;
+            // deltaY > 0 = scroll down = zoom out = higher layer
+            // deltaY < 0 = scroll up = zoom in = lower layer
+            const direction = event.deltaY > 0 ? 1 : -1;
             onLayerZoom(direction);
         };
 

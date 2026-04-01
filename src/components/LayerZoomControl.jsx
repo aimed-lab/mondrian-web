@@ -22,21 +22,21 @@ const LayerZoomControl = ({
         return null;
     }, [lo, hi, availableSet]);
 
-    const canZoomIn = currentLayer !== null && findNextAvailable(currentLayer, 1) !== null;
-    const canZoomOut = currentLayer !== null && findNextAvailable(currentLayer, -1) !== null;
+    const canZoomIn = currentLayer !== null && findNextAvailable(currentLayer, -1) !== null;
+    const canZoomOut = currentLayer !== null && findNextAvailable(currentLayer, 1) !== null;
 
     const handleZoomIn = useCallback(() => {
         if (currentLayer === null) {
             if (availableLayers.length > 0) onLayerChange(availableLayers[availableLayers.length - 1]);
             return;
         }
-        const next = findNextAvailable(currentLayer, 1);
+        const next = findNextAvailable(currentLayer, -1);
         if (next !== null) onLayerChange(next);
     }, [currentLayer, findNextAvailable, onLayerChange, availableLayers]);
 
     const handleZoomOut = useCallback(() => {
         if (currentLayer === null) return;
-        const next = findNextAvailable(currentLayer, -1);
+        const next = findNextAvailable(currentLayer, 1);
         if (next !== null) onLayerChange(next);
     }, [currentLayer, findNextAvailable, onLayerChange]);
 
@@ -121,7 +121,7 @@ const LayerZoomControl = ({
                             ? 'hover:bg-gray-100 hover:border-black text-gray-700 cursor-pointer'
                             : 'text-gray-300 cursor-not-allowed',
                     ].join(' ')}
-                    title="Zoom in (more detail / higher layer)"
+                    title="Zoom in (more detail / lower layer)"
                 >
                     <Plus size={16} strokeWidth={2.5} />
                 </button>
@@ -137,7 +137,7 @@ const LayerZoomControl = ({
                             ? 'hover:bg-gray-100 hover:border-black text-gray-700 cursor-pointer'
                             : 'text-gray-300 cursor-not-allowed',
                     ].join(' ')}
-                    title="Zoom out (less detail / lower layer)"
+                    title="Zoom out (less detail / higher layer)"
                 >
                     <Minus size={16} strokeWidth={2.5} />
                 </button>

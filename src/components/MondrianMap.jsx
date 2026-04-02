@@ -509,7 +509,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
 
     // --- SVG Export ---
     const getSVGContent = useCallback((mode, customEntities = null, customRelationships = null) => {
-        let dlEntities = customEntities || layoutEntities;
+        let dlEntities = customEntities ? resolveLayout(customEntities) : layoutEntities;
         let dlRelationships = customRelationships || relationships;
 
         if (mode === 'selection' && !customEntities) {
@@ -531,7 +531,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
 
         const serializer = new XMLSerializer();
         return serializer.serializeToString(hiddenSvg);
-    }, [layoutEntities, relationships, selection, drawMap, width, height]);
+    }, [layoutEntities, relationships, selection, drawMap, width, height, resolveLayout]);
 
     const handleDownload = useCallback((mode, customFilename = null) => {
         const svgString = getSVGContent(mode);

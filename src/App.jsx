@@ -12,6 +12,32 @@ import { getLayerSuffix } from './utils/layerSuffix.js';
 import JSZip from 'jszip';
 import InfoPanel from './components/InfoPanel';
 
+const svgToPngBlob = (svgString, width = 1000, height = 1000) => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const svgUrl = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
+        img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#F3F4F6"; // background color (matches bg-gray-100)
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(svgUrl);
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error("Failed to convert canvas to blob"));
+            }, "image/png");
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(svgUrl);
+            reject(new Error("Failed to load SVG into image"));
+        };
+        img.src = svgUrl;
+    });
+};
+
 function App() {
     // --- Data State ---
     const [layoutJson, setLayoutJson] = useState(null);
@@ -214,29 +240,45 @@ function App() {
 
     const handleDownloadAllLayersZip = async () => {
         if (!layoutJson || !mondrianMapRef.current) return;
-        const zip = new JSZip();
-        const case_study_slug = (layoutJson.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+        setIsLoading(true); // Show loader while downloading
+        try {
+            const zip = new JSZip();
+            const case_study_slug = (layoutJson.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
 
-        // Get unique layers from nodes
-        const availableLayers = Array.from(new Set(layoutJson.nodes.map(n => n.layer))).sort((a, b) => a - b);
+            // Use the component's availableLayers (which correctly excludes L0)
+            const layersToDownload = availableLayers;
 
-        // Helper to get parameters for a specific layer
-        const getParamsForLayer = (layer) => ({
-            ...parameters,
-            selectedLayer: layer
-        });
+            // Helper to get parameters for a specific layer, using that layer's specific max limits
+            const getParamsForLayer = (layer) => ({
+                ...parameters,
+                selectedLayer: layer,
+                maxBlocks: layerNodeCounts[layer] || 10000,
+                maxEdges: layerEdgeCounts[layer] || 10000,
+            });
 
         // 1. Generate Combined (All Layers) map
         const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(null));
         const allSvg = mondrianMapRef.current.getSVG('full', allEntities, allRelationships);
         zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
+        try {
+            const allPng = await svgToPngBlob(allSvg);
+            zip.file(`mondrian_map_full_${case_study_slug}_all.png`, allPng);
+        } catch (e) {
+            console.error("Failed to generate combined PNG:", e);
+        }
 
         // 2. Generate each individual layer map
-        for (const layer of availableLayers) {
+        for (const layer of layersToDownload) {
             const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(layer));
             if (layerEntities.length > 0) {
                 const layerSvg = mondrianMapRef.current.getSVG('full', layerEntities, layerRelationships);
                 zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.svg`, layerSvg);
+                try {
+                    const layerPng = await svgToPngBlob(layerSvg);
+                    zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.png`, layerPng);
+                } catch (e) {
+                    console.error(`Failed to generate PNG for layer ${layer}:`, e);
+                }
             }
         }
 
@@ -249,6 +291,12 @@ function App() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
+        } catch (error) {
+            console.error("Failed to generate ZIP:", error);
+        } finally {
+            setIsLoading(false); // Hide loader when done
+        }
     };
 
     const isSelectionActive = selectedNodes.length > 0;

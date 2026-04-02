@@ -446,8 +446,11 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     const lastLayerZoomRef = useRef(0);
 
     useEffect(() => {
-        if (!layoutEntities || layoutEntities.length === 0 || !relationships) return;
         const svg = d3.select(svgRef.current);
+        if (!layoutEntities || layoutEntities.length === 0 || !relationships) {
+            svg.selectAll("*").remove();
+            return;
+        }
         const contentGroup = drawMap(svg, { drawEntities: layoutEntities, drawRelationships: relationships, config: { selectionState: selection } }, true);
 
         // Within-layer zoom (only active when Ctrl is held)

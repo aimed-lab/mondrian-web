@@ -496,9 +496,13 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
 
 // ── Main Component ───────────────────────────────────────────────────────
 
-const GeneSetInput = ({ onRunAnalysis, isLoading }) => {
+const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [mode, setMode] = useState('custom'); // 'custom' | 'case_study'
+
+    useEffect(() => {
+        if (onModeChange) onModeChange(mode);
+    }, [mode, onModeChange]);
     const [libraryIndex, setLibraryIndex] = useState(null);
     const [selectedLibrary, setSelectedLibrary] = useState('GO_Biological_Process_2023');
 

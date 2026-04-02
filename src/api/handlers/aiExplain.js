@@ -64,11 +64,11 @@ function logPromptToTerminal(systemPrompt, userPrompt) {
   if (!shouldLog) return;
 
   const W = 72;
-  const line  = '─'.repeat(W);
+  const line = '─'.repeat(W);
   const dline = '═'.repeat(W);
-  const cyan  = (s) => `\x1b[36m${s}\x1b[0m`;
+  const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
   const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
-  const dim   = (s) => `\x1b[2m${s}\x1b[0m`;
+  const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
   console.log('\n' + cyan('╔' + dline + '╗'));
   console.log(cyan('║') + '  🧬 AI EXPLAIN — FULL PROMPT PREVIEW'.padEnd(W) + cyan('║'));
@@ -124,20 +124,20 @@ export async function handleAIExplain({ method, headers, rawBody }) {
   }
 
   // ── Rate limiting ────────────────────────────────────────────────────────
-  const id   = buildIdentifier(headers);
+  const id = buildIdentifier(headers);
   const rate = rateLimiter.check(id);
 
   const rateHeaders = {
-    'X-RateLimit-Limit':     String(CONFIG.HOURLY_REQUEST_LIMIT),
+    'X-RateLimit-Limit': String(CONFIG.HOURLY_REQUEST_LIMIT),
     'X-RateLimit-Remaining': String(rate.remaining),
-    'X-RateLimit-Reset':     String(rate.resetAt),
+    'X-RateLimit-Reset': String(rate.resetAt),
   };
 
   if (!rate.allowed) {
     return json(429, {
-      error:     `Rate limit exceeded. Maximum ${CONFIG.HOURLY_REQUEST_LIMIT} AI explanations per hour.`,
+      error: `Rate limit exceeded. Maximum ${CONFIG.HOURLY_REQUEST_LIMIT} AI explanations per hour.`,
       remaining: 0,
-      resetAt:   rate.resetAt,
+      resetAt: rate.resetAt,
     }, rateHeaders);
   }
 
@@ -152,7 +152,7 @@ export async function handleAIExplain({ method, headers, rawBody }) {
   const { systemPrompt, userPrompt } = body;
 
   if (typeof systemPrompt !== 'string' || typeof userPrompt !== 'string' ||
-      !systemPrompt.trim() || !userPrompt.trim()) {
+    !systemPrompt.trim() || !userPrompt.trim()) {
     return json(400, { error: 'Both systemPrompt and userPrompt are required.' }, rateHeaders);
   }
 
@@ -183,7 +183,7 @@ export async function handleAIExplain({ method, headers, rawBody }) {
       explanation,
       model,
       remaining: rate.remaining,
-      resetAt:   rate.resetAt,
+      resetAt: rate.resetAt,
     }, rateHeaders);
 
   } catch (err) {
@@ -192,7 +192,7 @@ export async function handleAIExplain({ method, headers, rawBody }) {
       const outStatus = err.statusCode >= 500 ? 502 : err.statusCode;
       console.error(`[aiExplain] OpenAIError (${err.statusCode}): ${err.message}`);
       return json(outStatus, {
-        error:     'AI service temporarily unavailable. Please try again in a moment.',
+        error: 'AI service temporarily unavailable. Please try again in a moment.',
         remaining: rate.remaining,
       }, rateHeaders);
     }
@@ -200,7 +200,7 @@ export async function handleAIExplain({ method, headers, rawBody }) {
     // Unexpected (should never happen — defensive)
     console.error('[aiExplain] Unhandled error:', err);
     return json(502, {
-      error:     'An unexpected error occurred. Please try again.',
+      error: 'An unexpected error occurred. Please try again.',
       remaining: rate.remaining,
     }, rateHeaders);
   }

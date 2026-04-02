@@ -48,6 +48,7 @@ function App() {
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+    const [inputMode, setInputMode] = useState('custom');
 
     // --- AI Explain: nodes currently selected on the Mondrian Map ---
     const [selectedNodes, setSelectedNodes] = useState([]);
@@ -256,42 +257,42 @@ function App() {
                 maxEdges: layerEdgeCounts[layer] || 10000,
             });
 
-        // 1. Generate Combined (All Layers) map
-        const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(null));
-        const allSvg = mondrianMapRef.current.getSVG('full', allEntities, allRelationships);
-        zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
-        try {
-            const allPng = await svgToPngBlob(allSvg);
-            zip.file(`mondrian_map_full_${case_study_slug}_all.png`, allPng);
-        } catch (e) {
-            console.error("Failed to generate combined PNG:", e);
-        }
+            // 1. Generate Combined (All Layers) map
+            const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(null));
+            const allSvg = mondrianMapRef.current.getSVG('full', allEntities, allRelationships);
+            zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
+            try {
+                const allPng = await svgToPngBlob(allSvg);
+                zip.file(`mondrian_map_full_${case_study_slug}_all.png`, allPng);
+            } catch (e) {
+                console.error("Failed to generate combined PNG:", e);
+            }
 
-        // 2. Generate each individual layer map
-        for (const layer of layersToDownload) {
-            const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(layer));
-            if (layerEntities.length > 0) {
-                const layerSvg = mondrianMapRef.current.getSVG('full', layerEntities, layerRelationships);
-                zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.svg`, layerSvg);
-                try {
-                    const layerPng = await svgToPngBlob(layerSvg);
-                    zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.png`, layerPng);
-                } catch (e) {
-                    console.error(`Failed to generate PNG for layer ${layer}:`, e);
+            // 2. Generate each individual layer map
+            for (const layer of layersToDownload) {
+                const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(layer));
+                if (layerEntities.length > 0) {
+                    const layerSvg = mondrianMapRef.current.getSVG('full', layerEntities, layerRelationships);
+                    zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.svg`, layerSvg);
+                    try {
+                        const layerPng = await svgToPngBlob(layerSvg);
+                        zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.png`, layerPng);
+                    } catch (e) {
+                        console.error(`Failed to generate PNG for layer ${layer}:`, e);
+                    }
                 }
             }
-        }
 
-        // Generate and download zip
-        const content = await zip.generateAsync({ type: 'blob' });
-        const url = URL.createObjectURL(content);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `mondrian_map_all_layers_${case_study_slug}.zip`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
+            // Generate and download zip
+            const content = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(content);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `mondrian_map_all_layers_${case_study_slug}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
         } catch (error) {
             console.error("Failed to generate ZIP:", error);
         } finally {
@@ -321,47 +322,43 @@ function App() {
             >
                 <div className="w-full h-full overflow-hidden">
                     <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
-                    {/* Header */}
-                    <div className="mb-8">
-                        <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
-                            MondrianMap
-                        </h1>
-                        <p className="text-gray-500 text-sm mt-0.5 leading-relaxed">Navigating gene set hierarchies with multi-resolution maps</p>
-                    </div>
+                        {/* Header */}
+                        <div className="mb-8">
+                            <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
+                                MondrianMap
+                            </h1>
+                            <p className="text-gray-500 text-sm mt-0.5 leading-relaxed">Navigating gene set hierarchies with multi-resolution maps</p>
+                        </div>
 
-                    <div className="flex flex-col gap-6">
-                        {/* Gene Set Input */}
-                        <GeneSetInput
-                            onRunAnalysis={handleRunAnalysis}
-                            isLoading={isLoading}
-                        />
+                        <div className="flex flex-col gap-6">
+                            {/* Gene Set Input */}
+                            <GeneSetInput
+                                onRunAnalysis={handleRunAnalysis}
+                                isLoading={isLoading}
+                                onModeChange={setInputMode}
+                            />
 
-                        {/* Error message */}
-                        {error && (
-                            <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-none">
-                                <span className="font-bold">Error:</span> {error}
-                            </div>
-                        )}
+                            {/* Error message */}
+                            {error && (
+                                <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-none">
+                                    <span className="font-bold">Error:</span> {error}
+                                </div>
+                            )}
 
-                        {/* Info message (no results, etc.) */}
-                        {info && !error && (
-                            <div className="bg-gray-50 border border-gray-200 text-gray-600 text-xs px-3 py-2 rounded-none">
-                                {info}
-                            </div>
-                        )}
+                            {/* Info message moved to canvas */}
 
-                        <ParameterControls
-                            parameters={parameters}
-                            onParametersChange={handleParametersChange}
-                            nodeCount={totalNodeCount}
-                            edgeCount={totalEdgeCount}
-                            availableLayers={availableLayers}
-                            layerNodeCounts={layerNodeCounts}
-                            layerEdgeCounts={layerEdgeCounts}
-                        />
-                    </div>
+                            <ParameterControls
+                                parameters={parameters}
+                                onParametersChange={handleParametersChange}
+                                nodeCount={totalNodeCount}
+                                edgeCount={totalEdgeCount}
+                                availableLayers={availableLayers}
+                                layerNodeCounts={layerNodeCounts}
+                                layerEdgeCounts={layerEdgeCounts}
+                            />
+                        </div>
 
-                    <InfoPanel />
+                        <InfoPanel />
                     </div>
                 </div>
 
@@ -379,6 +376,19 @@ function App() {
 
             {/* Main Content Area */}
             <div className="flex-1 relative h-full min-w-0">
+                {/* Empty State / Info Messages overlay */}
+                {(!layoutJson && !isLoading && !error) && (
+                    <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                        <div className="text-gray-500 text-lg pointer-events-auto text-center mx-4 max-w-md">
+                            {info ? info : (
+                                inputMode === 'custom'
+                                    ? "Enter your gene sets and click Run Enrichment Analysis to generate the Hierarchical Mondrian Maps."
+                                    : "Select a case study and condition, then click Run Enrichment Analysis to generate the Hierarchical Mondrian Maps."
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 <AnimatePresence>
                     {!isPanelOpen && (
                         <motion.button
@@ -428,7 +438,7 @@ function App() {
                                 currentLayer={parameters.selectedLayer}
                                 availableLayers={availableLayers}
                                 onLayerChange={handleLayerChange}
-                                allLayers={Math.max(...availableLayers)}
+                                allLayers={13}
                                 defaultLayer={Math.max(...availableLayers)}
                             />
                         </div>
@@ -440,63 +450,63 @@ function App() {
                         {!isSelectionActive && layoutJson && (
                             <AnimatePresence>
                                 <motion.button
-                                key="dl-full"
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 8 }}
-                                transition={{ duration: 0.18 }}
-                                onClick={() => {
-                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                    const filename = `mondrian_map_full_${caseName}${layerSuffix}.svg`;
-                                    mondrianMapRef.current?.downloadMap('full', filename);
-                                }}
-                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
-                                title={mapDownloadLabel}
-                            >
-                                <Download size={14} />
-                                {mapDownloadLabel}
-                            </motion.button>
+                                    key="dl-full"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 8 }}
+                                    transition={{ duration: 0.18 }}
+                                    onClick={() => {
+                                        const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                        const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                        const filename = `mondrian_map_full_${caseName}${layerSuffix}.svg`;
+                                        mondrianMapRef.current?.downloadMap('full', filename);
+                                    }}
+                                    className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
+                                    title={mapDownloadLabel}
+                                >
+                                    <Download size={14} />
+                                    {mapDownloadLabel}
+                                </motion.button>
 
-                            <motion.button
-                                key="dl-zip"
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 8 }}
-                                transition={{ duration: 0.18, delay: 0.05 }}
-                                onClick={handleDownloadAllLayersZip}
-                                className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
-                                title="Download all layer maps in a ZIP archive"
-                            >
-                                <Archive size={14} />
-                                Download Mondrian Maps (All Layers)
-                            </motion.button>
-                        </AnimatePresence>
-                    )}
+                                <motion.button
+                                    key="dl-zip"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 8 }}
+                                    transition={{ duration: 0.18, delay: 0.05 }}
+                                    onClick={handleDownloadAllLayersZip}
+                                    className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
+                                    title="Download all layer maps in a ZIP archive"
+                                >
+                                    <Archive size={14} />
+                                    Download Mondrian Maps (All Layers)
+                                </motion.button>
+                            </AnimatePresence>
+                        )}
 
-                    {/* Selection-specific downloads */}
-                    {isSelectionActive && (
-                        <AnimatePresence>
-                            <motion.button
-                                key="dl-selection"
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 8 }}
-                                transition={{ duration: 0.18 }}
-                                onClick={() => {
-                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                    const filename = `mondrian_map_selection_${caseName}${layerSuffix}.svg`;
-                                    mondrianMapRef.current?.downloadMap('selection', filename);
-                                }}
-                                className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
-                                title="Download only the currently selected terms"
-                            >
-                                <Download size={14} />
-                                Download Mondrian Map (Selected)
-                            </motion.button>
-                        </AnimatePresence>
-                    )}
+                        {/* Selection-specific downloads */}
+                        {isSelectionActive && (
+                            <AnimatePresence>
+                                <motion.button
+                                    key="dl-selection"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 8 }}
+                                    transition={{ duration: 0.18 }}
+                                    onClick={() => {
+                                        const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                        const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                        const filename = `mondrian_map_selection_${caseName}${layerSuffix}.svg`;
+                                        mondrianMapRef.current?.downloadMap('selection', filename);
+                                    }}
+                                    className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
+                                    title="Download only the currently selected terms"
+                                >
+                                    <Download size={14} />
+                                    Download Mondrian Map (Selected)
+                                </motion.button>
+                            </AnimatePresence>
+                        )}
                     </div>
                 </div>
             </div>
@@ -526,28 +536,28 @@ function App() {
 
                     <div className="w-full h-full overflow-hidden">
                         <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
-                        <DataTable
-                            layoutJson={layoutJson}
-                            filteredNodes={entities}
-                            filteredEdges={relationships}
-                            onSelectionToggle={(type, id, isMulti) =>
-                                mondrianMapRef.current?.toggleSelection(type, id, isMulti)
-                            }
-                            selection={{
-                                nodes: new Set(selectedNodes.map(n => n.id)),
-                                edges: selectedRelationshipIds
-                            }}
-                            currentLayer={parameters.selectedLayer}
-                            aiSection={
-                                <AIExplainPanel
-                                    selectedNodes={selectedNodes}
-                                    selectedRelationshipIds={selectedRelationshipIds}
-                                    allEdges={relationships}
-                                    metadata={layoutJson?.metadata || {}}
-                                    parameters={parameters}
-                                />
-                            }
-                        />
+                            <DataTable
+                                layoutJson={layoutJson}
+                                filteredNodes={entities}
+                                filteredEdges={relationships}
+                                onSelectionToggle={(type, id, isMulti) =>
+                                    mondrianMapRef.current?.toggleSelection(type, id, isMulti)
+                                }
+                                selection={{
+                                    nodes: new Set(selectedNodes.map(n => n.id)),
+                                    edges: selectedRelationshipIds
+                                }}
+                                currentLayer={parameters.selectedLayer}
+                                aiSection={
+                                    <AIExplainPanel
+                                        selectedNodes={selectedNodes}
+                                        selectedRelationshipIds={selectedRelationshipIds}
+                                        allEdges={relationships}
+                                        metadata={layoutJson?.metadata || {}}
+                                        parameters={parameters}
+                                    />
+                                }
+                            />
                         </div>
                     </div>
                 </motion.div>

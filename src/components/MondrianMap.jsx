@@ -320,6 +320,9 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     const drawMap = useCallback((targetSvg, drawData, isInteractive = false) => {
         const { drawEntities, drawRelationships, config } = drawData;
         const { selectionState } = config;
+        // Allow override dimensions for export (ZIP downloads with different canvas sizes)
+        const drawWidth = config.overrideWidth || width;
+        const drawHeight = config.overrideHeight || height;
         targetSvg.selectAll("*").remove();
         const group = targetSvg.append("g").attr("class", "content");
         const gridSize = 10;
@@ -327,11 +330,11 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
 
         // Grid
         const gridGroup = group.append("g").attr("class", "grid");
-        gridGroup.selectAll("line.v").data(d3.range(0, width + 1, gridSize)).enter().append("line")
-            .attr("class", "v").attr("x1", d => d).attr("y1", 0).attr("x2", d => d).attr("y2", height)
+        gridGroup.selectAll("line.v").data(d3.range(0, drawWidth + 1, gridSize)).enter().append("line")
+            .attr("class", "v").attr("x1", d => d).attr("y1", 0).attr("x2", d => d).attr("y2", drawHeight)
             .attr("stroke", "#F0F0F0").attr("stroke-width", 1);
-        gridGroup.selectAll("line.h").data(d3.range(0, height + 1, gridSize)).enter().append("line")
-            .attr("class", "h").attr("x1", 0).attr("y1", d => d).attr("x2", width).attr("y2", d => d)
+        gridGroup.selectAll("line.h").data(d3.range(0, drawHeight + 1, gridSize)).enter().append("line")
+            .attr("class", "h").attr("x1", 0).attr("y1", d => d).attr("x2", drawWidth).attr("y2", d => d)
             .attr("stroke", "#F0F0F0").attr("stroke-width", 1);
 
         // Build entity rectangles
@@ -342,8 +345,8 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             const h = dims.h;
             let rawX = entity.x - w / 2;
             let rawY = entity.y - h / 2;
-            let rectX = Math.max(0, Math.min(width - w, snap(rawX)));
-            let rectY = Math.max(0, Math.min(height - h, snap(rawY)));
+            let rectX = Math.max(0, Math.min(drawWidth - w, snap(rawX)));
+            let rectY = Math.max(0, Math.min(drawHeight - h, snap(rawY)));
             entityRects[entity.id] = {
                 x: rectX, y: rectY, width: w, height: h,
                 color: getColor(entity), id: entity.id,
@@ -361,7 +364,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         };
 
         // Mondrian lines
-        const mondrianLines = generateMondrianLines(drawEntities, drawRelationships, width, height);
+        const mondrianLines = generateMondrianLines(drawEntities, drawRelationships, drawWidth, drawHeight);
         const subdivisionGroup = group.append("g").attr("class", "subdivision");
         subdivisionGroup.selectAll("line").data(mondrianLines).enter().append("line")
             .attr("x1", d => d.x1).attr("y1", d => d.y1).attr("x2", d => d.x2).attr("y2", d => d.y2)
@@ -434,7 +437,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         });
 
         // Canvas border
-        group.append("rect").attr("x", 0).attr("y", 0).attr("width", width).attr("height", height)
+        group.append("rect").attr("x", 0).attr("y", 0).attr("width", drawWidth).attr("height", drawHeight)
             .attr("fill", "none").attr("stroke", "#1D1D1D").attr("stroke-width", 8);
 
         return group;
@@ -511,7 +514,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     }, [layoutEntities, relationships, width, height, selection, drawMap, onLayerZoom]);
 
     // --- SVG Export ---
-    const getSVGContent = useCallback((mode, customEntities = null, customRelationships = null) => {
+    const getSVGContent = useCallback((mode, customEntities = null, customRelationships = null, customWidth = null, customHeight = null) => {
         let dlEntities = customEntities ? resolveLayout(customEntities) : layoutEntities;
         let dlRelationships = customRelationships || relationships;
 
@@ -520,16 +523,20 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             dlRelationships = relationships.filter(r => selection.relationships.has(`${r.source}-${r.target}`));
         }
 
+        // Use custom dimensions if provided (for ZIP downloads with different canvas sizes per layer)
+        const exportWidth = customWidth || width;
+        const exportHeight = customHeight || height;
+
         const hiddenSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        hiddenSvg.setAttribute("width", width);
-        hiddenSvg.setAttribute("height", height);
+        hiddenSvg.setAttribute("width", exportWidth);
+        hiddenSvg.setAttribute("height", exportHeight);
         hiddenSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
         const d3Svg = d3.select(hiddenSvg);
 
         drawMap(d3Svg, {
             drawEntities: dlEntities,
             drawRelationships: dlRelationships,
-            config: { selectionState: null }
+            config: { selectionState: null, overrideWidth: exportWidth, overrideHeight: exportHeight }
         }, false);
 
         const serializer = new XMLSerializer();

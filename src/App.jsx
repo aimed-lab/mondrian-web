@@ -11,6 +11,7 @@ import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.
 import { getLayerSuffix } from './utils/layerSuffix.js';
 import JSZip from 'jszip';
 import InfoPanel from './components/InfoPanel';
+import { computeRequiredCanvasSize } from './utils/canvasAutoSize.js';
 
 const svgToPngBlob = (svgString, width = 1000, height = 1000) => {
     return new Promise((resolve, reject) => {
@@ -193,6 +194,91 @@ function App() {
         return mapRealDataToEntities(layoutJson, parameters);
     }, [layoutJson, parameters]);
 
+    // --- Dynamic Canvas Size: auto-expand to resolve overlaps & border-touching ---
+    // The overlap check now runs a D3 force simulation (matching MondrianMap's
+    // resolveLayout) so it detects issues in the ACTUAL rendered positions, not
+    // raw UMAP coordinates.
+    //
+    // Rules:
+    //   - Individual layers (L1–L13): each computes its own required size; ALL
+    //     individual layers are synced to the MAX across L1–L13.
+    //   - "All Layers" (null): computes its own size INDEPENDENTLY — it does NOT
+    //     cascade to L1–L13.
+    const [allLayersCanvasSize, setAllLayersCanvasSize] = useState(1000);
+    const [syncedLayerCanvasSize, setSyncedLayerCanvasSize] = useState(1000);
+    const BASE_CANVAS_SIZE = 1000;
+
+    // Compute canvas sizes when data or filter params change
+    useEffect(() => {
+        if (!layoutJson) {
+            setAllLayersCanvasSize(BASE_CANVAS_SIZE);
+            setSyncedLayerCanvasSize(BASE_CANVAS_SIZE);
+            return;
+        }
+
+        const blockSpacing = parameters.blockSpacing || 5;
+        const layers = getAvailableLayers(layoutJson);
+
+        // 1. Compute for each individual layer, track the max
+        let maxLayerSize = BASE_CANVAS_SIZE;
+        for (const layer of layers) {
+            const params = {
+                ...parameters,
+                selectedLayer: layer,
+                maxBlocks: countNodesForLayer(layoutJson, layer, parameters.pValueCutoff),
+                maxEdges: countEdgesForLayer(layoutJson, layer, parameters.pValueCutoff, parameters.jaccardThreshold),
+            };
+            const { entities: layerEntities } = mapRealDataToEntities(layoutJson, params);
+            const required = computeRequiredCanvasSize(layerEntities, BASE_CANVAS_SIZE, 200, 3000, blockSpacing);
+            if (required > maxLayerSize) maxLayerSize = required;
+        }
+        console.log(`[Canvas Auto-Size] Individual layers synced to ${maxLayerSize}×${maxLayerSize}`);
+        setSyncedLayerCanvasSize(maxLayerSize);
+
+        // 2. Compute for "All Layers" (independent)
+        const allParams = {
+            ...parameters,
+            selectedLayer: null,
+            maxBlocks: countNodesForLayer(layoutJson, null, parameters.pValueCutoff),
+            maxEdges: countEdgesForLayer(layoutJson, null, parameters.pValueCutoff, parameters.jaccardThreshold),
+        };
+        const { entities: allEntities } = mapRealDataToEntities(layoutJson, allParams);
+        const allRequired = computeRequiredCanvasSize(allEntities, BASE_CANVAS_SIZE, 200, 3000, blockSpacing);
+        console.log(`[Canvas Auto-Size] All Layers requires ${allRequired}×${allRequired}`);
+        setAllLayersCanvasSize(allRequired);
+    }, [layoutJson, parameters.pValueCutoff, parameters.jaccardThreshold, parameters.blockSizeMultiplier, parameters.blockSpacing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Effective canvas size for the currently displayed layer
+    const effectiveCanvasSize = useMemo(() => {
+        if (parameters.selectedLayer === null) {
+            return allLayersCanvasSize;
+        }
+        return syncedLayerCanvasSize;
+    }, [allLayersCanvasSize, syncedLayerCanvasSize, parameters.selectedLayer]);
+
+    // Helper to get the effective canvas size for a specific layer (used in downloads)
+    const getCanvasSizeForLayer = useCallback((layer) => {
+        if (layer === null) {
+            return allLayersCanvasSize;
+        }
+        return syncedLayerCanvasSize;
+    }, [allLayersCanvasSize, syncedLayerCanvasSize]);
+
+    /**
+     * Rescale entity x/y coordinates proportionally from the base canvas (1000) to the target size.
+     * This ensures entities actually spread across the expanded canvas rather than bunching in center.
+     */
+    const rescaleEntitiesForCanvas = useCallback((ents, targetSize) => {
+        if (targetSize === BASE_CANVAS_SIZE || !ents || ents.length === 0) return ents;
+        const scale = targetSize / BASE_CANVAS_SIZE;
+        return ents.map(e => ({ ...e, x: e.x * scale, y: e.y * scale }));
+    }, []);
+
+    // Rescale entities for the currently displayed canvas size
+    const rescaledEntities = useMemo(() => {
+        return rescaleEntitiesForCanvas(entities, effectiveCanvasSize);
+    }, [entities, effectiveCanvasSize, rescaleEntitiesForCanvas]);
+
     // --- Layer zoom handler (for both scroll wheel and +/- buttons) ---
     const handleLayerZoom = useCallback((direction) => {
         // direction: +1 = zoom out (higher layer), -1 = zoom in (lower layer)
@@ -257,25 +343,29 @@ function App() {
                 maxEdges: layerEdgeCounts[layer] || 10000,
             });
 
-            // 1. Generate Combined (All Layers) map
+            // 1. Generate Combined (All Layers) map — uses its own canvas size
+            const allCanvasSize = getCanvasSizeForLayer(null);
             const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(null));
-            const allSvg = mondrianMapRef.current.getSVG('full', allEntities, allRelationships);
+            const allEntitiesScaled = rescaleEntitiesForCanvas(allEntities, allCanvasSize);
+            const allSvg = mondrianMapRef.current.getSVG('full', allEntitiesScaled, allRelationships, allCanvasSize, allCanvasSize);
             zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
             try {
-                const allPng = await svgToPngBlob(allSvg);
+                const allPng = await svgToPngBlob(allSvg, allCanvasSize, allCanvasSize);
                 zip.file(`mondrian_map_full_${case_study_slug}_all.png`, allPng);
             } catch (e) {
                 console.error("Failed to generate combined PNG:", e);
             }
 
-            // 2. Generate each individual layer map
+            // 2. Generate each individual layer map — uses synced max canvas size
+            const layerCanvasSize = getCanvasSizeForLayer(1); // any non-null layer returns the synced max
             for (const layer of layersToDownload) {
                 const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(layer));
                 if (layerEntities.length > 0) {
-                    const layerSvg = mondrianMapRef.current.getSVG('full', layerEntities, layerRelationships);
+                    const layerEntitiesScaled = rescaleEntitiesForCanvas(layerEntities, layerCanvasSize);
+                    const layerSvg = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, layerRelationships, layerCanvasSize, layerCanvasSize);
                     zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.svg`, layerSvg);
                     try {
-                        const layerPng = await svgToPngBlob(layerSvg);
+                        const layerPng = await svgToPngBlob(layerSvg, layerCanvasSize, layerCanvasSize);
                         zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.png`, layerPng);
                     } catch (e) {
                         console.error(`Failed to generate PNG for layer ${layer}:`, e);
@@ -419,10 +509,10 @@ function App() {
 
                 <MondrianMap
                     ref={mondrianMapRef}
-                    entities={entities}
+                    entities={rescaledEntities}
                     relationships={relationships}
-                    width={1000}
-                    height={1000}
+                    width={effectiveCanvasSize}
+                    height={effectiveCanvasSize}
                     parameters={parameters}
                     isLoading={isLoading}
                     onSelectionChange={handleSelectionChange}

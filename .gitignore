@@ -7,6 +7,7 @@ IMPLEMENTATION_PLAN.md
 .claude/
 claude/
 results/
+res2/
 public/data/go_layers.py
 *pdf
 *mjs

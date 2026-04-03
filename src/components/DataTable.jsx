@@ -147,7 +147,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
         const link = document.createElement("a");
         link.setAttribute("href", url);
         const suffix = getLayerSuffix(currentLayer);
-        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}.csv`);
+        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}_table.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

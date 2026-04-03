@@ -504,7 +504,7 @@ const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
         if (onModeChange) onModeChange(mode);
     }, [mode, onModeChange]);
     const [libraryIndex, setLibraryIndex] = useState(null);
-    const [selectedLibrary, setSelectedLibrary] = useState('GO_Biological_Process_2023');
+    const [selectedLibrary, setSelectedLibrary] = useState('GO_Biological_Process_2025');
 
     useEffect(() => {
         loadLibraryIndex().then(index => {

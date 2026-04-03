@@ -56,7 +56,7 @@ function buildIdentifier(headers) {
  * This runs server-side (Vite dev middleware / Netlify function log),
  * so the API key is NEVER involved in what's printed.
  */
-function logPromptToTerminal(systemPrompt, userPrompt) {
+function logPromptToTerminal(systemPrompt, userPrompt, model) {
   const shouldLog =
     process.env.LOG_PROMPTS === 'true' ||
     process.env.NODE_ENV === 'development';
@@ -71,7 +71,7 @@ function logPromptToTerminal(systemPrompt, userPrompt) {
   const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
   console.log('\n' + cyan('╔' + dline + '╗'));
-  console.log(cyan('║') + '  🧬 AI EXPLAIN — FULL PROMPT PREVIEW'.padEnd(W) + cyan('║'));
+  console.log(cyan('║') + `  🧬 AI EXPLAIN — FULL PROMPT PREVIEW (${model})`.padEnd(W) + cyan('║'));
   console.log(cyan('╚' + dline + '╝'));
 
   console.log('\n' + yellow('── SYSTEM PROMPT ' + '─'.repeat(W - 17)));
@@ -161,8 +161,10 @@ export async function handleAIExplain({ method, headers, rawBody }) {
     return json(400, { error: 'Prompt exceeds maximum allowed length.' }, rateHeaders);
   }
 
+  const model = process.env.OPENAI_MODEL || 'gpt-5.4-nano';
+
   // ── Log full prompt to terminal (dev / LOG_PROMPTS=true) ─────────────────
-  logPromptToTerminal(systemPrompt, userPrompt);
+  logPromptToTerminal(systemPrompt, userPrompt, model);
 
   // ── API key guard ────────────────────────────────────────────────────────
   const apiKey = process.env.OPENAI_API_KEY;
@@ -173,7 +175,6 @@ export async function handleAIExplain({ method, headers, rawBody }) {
     }, rateHeaders);
   }
 
-  const model = process.env.OPENAI_MODEL || 'gpt-5.4';
 
   // ── Call OpenAI ──────────────────────────────────────────────────────────
   try {

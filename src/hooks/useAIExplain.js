@@ -25,12 +25,14 @@ const ENDPOINT = "/.netlify/functions/ai-explain";
  */
 export function useAIExplain() {
   const [explanation, setExplanation] = useState(null);
+  const [modelName, setModelName] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [remaining, setRemaining] = useState(CONFIG.HOURLY_REQUEST_LIMIT);
   const [resetAt, setResetAt] = useState(null);
 
   // Cache keyed by sorted selected-node IDs → avoids duplicate API calls
+  // (We now store an object { explanation, model } in the cache)
   const cache = useRef(new Map());
 
   /**
@@ -57,7 +59,9 @@ export function useAIExplain() {
 
       // Return cached result unless force-refresh was requested (Regenerate)
       if (!force && cache.current.has(cacheKey)) {
-        setExplanation(cache.current.get(cacheKey));
+        const cached = cache.current.get(cacheKey);
+        setExplanation(cached.explanation);
+        setModelName(cached.model);
         setError(null);
         return;
       }
@@ -75,6 +79,7 @@ export function useAIExplain() {
       setLoading(true);
       setError(null);
       setExplanation(null);
+      setModelName(null);
 
       try {
         // Assemble prompts
@@ -108,7 +113,8 @@ export function useAIExplain() {
 
         // Success — cache & display
         setExplanation(data.explanation);
-        cache.current.set(cacheKey, data.explanation);
+        setModelName(data.model);
+        cache.current.set(cacheKey, { explanation: data.explanation, model: data.model });
       } catch (err) {
         setError(err.message || "Something went wrong. Please try again.");
       } finally {
@@ -121,11 +127,13 @@ export function useAIExplain() {
   /** Clear current explanation (e.g., when selection changes) */
   const clearExplanation = useCallback(() => {
     setExplanation(null);
+    setModelName(null);
     setError(null);
   }, []);
 
   return {
     explanation,
+    modelName,
     loading,
     error,
     remaining,

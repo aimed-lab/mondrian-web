@@ -231,7 +231,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const relatedEdges = relationships.filter(r => r.source === entityId || r.target === entityId);
         const relatedEntityIds = new Set([entityId]);
         const relatedEdgeIds = new Set();
-        
+
         // Add all nodes in the 1-degree neighborhood
         relatedEdges.forEach(r => {
             relatedEntityIds.add(r.source);
@@ -352,8 +352,10 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
                 color: getColor(entity), id: entity.id,
                 name: entity.name || '',
                 gene_count: entity.gene_count || 0,
+                genes: entity.genes || [],
                 significance_score: entity.significance_score || 0,
                 direction: entity.direction || '',
+                layer: entity.layer,
             };
         });
 
@@ -389,9 +391,11 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
 
             if (isInteractive) {
                 path.on("click", (e) => handleEdgeClick(e, rel));
+                const sName = sRect.name || rel.source;
+                const tName = tRect.name || rel.target;
                 const tooltipText = rel.weight
-                    ? `${rel.source} ↔ ${rel.target} (Jaccard: ${rel.weight.toFixed(3)})`
-                    : `${rel.source} - ${rel.target}`;
+                    ? `${sName} ↔ ${tName} (JI: ${rel.weight.toFixed(2)})`
+                    : `${sName} - ${tName}`;
                 path.append("title").text(tooltipText);
             }
         });
@@ -412,11 +416,28 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
                 .attr("stroke", "#1D1D1D").attr("stroke-width", 3);
 
             // Tooltip
-            const tooltipParts = [rect.id];
-            if (rect.name) tooltipParts.push(rect.name);
-            if (rect.direction) tooltipParts.push(`Direction: ${rect.direction}`);
-            if (rect.significance_score) tooltipParts.push(`-log10(p): ${rect.significance_score.toFixed(2)}`);
-            if (rect.gene_count) tooltipParts.push(`Genes: ${rect.gene_count}`);
+            const tooltipParts = [];
+            const termName = rect.name ? rect.name : (rect.id.split('-')[1] || rect.id);
+            const termId = rect.id;
+            const title = `${termName} (${termId})`;
+            tooltipParts.push(title);
+            // OS tooltips use variable-width fonts, so exact character count makes '=' lines visually much longer. 
+            // We use a 0.75 multiplier heuristic to approximate the visual width of the average text.
+            tooltipParts.push('—'.repeat(Math.floor(title.length * 0.5)));
+            // tooltipParts.push(``);
+
+            const dirStr = rect.direction || 'unknown';
+            const sigStr = rect.significance_score ? rect.significance_score.toFixed(2) : 'N/A';
+            tooltipParts.push(`${dirStr} (-log10(p): ${sigStr})`);
+            if (rect.layer != null) {
+                tooltipParts.push(`# layer: ${rect.layer}`);
+            }
+
+            tooltipParts.push(`# genes: ${rect.gene_count || 0}`);
+
+            if (rect.genes && rect.genes.length > 0) {
+                tooltipParts.push(`geneset: ${rect.genes.join(', ')}`);
+            }
             g.append("title").text(tooltipParts.join('\n'));
 
             // Label

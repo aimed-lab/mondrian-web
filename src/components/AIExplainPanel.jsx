@@ -400,8 +400,8 @@ export default function AIHypothesisPanel({
             )
           ) : (
             <div className="text-center py-4 bg-gray-50 border border-gray-100">
-              <p className="text-sm font-medium" style={{ color: '#9CA3AF' }}>No GO terms/crosstalks selected.</p>
-              <p className="text-xs mt-1" style={{ color: '#D1D5DB' }}>Click GO terms or crosstalks from the Mondrian Map or the Enrichment Result tables to select them for AI.</p>
+              <p className="text-sm font-medium" style={{ color: '#9CA3AF' }}>Ready to generate an AI hypothesis?</p>
+              <p className="text-xs mt-1" style={{ color: '#D1D5DB' }}>Select GO terms or crosstalks from the Mondrian Map or Enrichment Results to get started.</p>
             </div>
           )}
         </div>

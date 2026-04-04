@@ -13,23 +13,42 @@ import JSZip from 'jszip';
 import InfoPanel from './components/InfoPanel';
 import { computeRequiredCanvasSize } from './utils/canvasAutoSize.js';
 
-const svgToPngBlob = (svgString, width = 1000, height = 1000) => {
+const svgToPngBlob = (svgString, originalWidth = 1000, originalHeight = 1000) => {
     return new Promise((resolve, reject) => {
+        // Use a 4x scale factor for "shiny publication-ready" high resolution
+        const scaleFactor = 4;
+        const width = originalWidth * scaleFactor;
+        const height = originalHeight * scaleFactor;
+
+        // Replace the width and height attributes in the SVG string to ensure the browser
+        // rasterizes it natively at the high-res dimensions, preventing blurry upscaling.
+        // The viewBox added earlier ensures everything perfectly scales to fit.
+        const scaledSvgString = svgString
+            .replace(/width="[^"]+"/, `width="${width}"`)
+            .replace(/height="[^"]+"/, `height="${height}"`);
+
         const img = new Image();
-        const svgUrl = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
+        const svgUrl = URL.createObjectURL(new Blob([scaledSvgString], { type: "image/svg+xml;charset=utf-8" }));
+        
         img.onload = () => {
             const canvas = document.createElement("canvas");
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext("2d");
+            
+            // For a truly crisp background, ensure image smoothing properties are enabled
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
             ctx.fillStyle = "#F3F4F6"; // background color (matches bg-gray-100)
             ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0);
+            ctx.drawImage(img, 0, 0, width, height);
+            
             URL.revokeObjectURL(svgUrl);
             canvas.toBlob((blob) => {
                 if (blob) resolve(blob);
                 else reject(new Error("Failed to convert canvas to blob"));
-            }, "image/png");
+            }, "image/png", 1.0); // 1.0 = highest quality for PNG (though technically only applies to JPEG/WebP)
         };
         img.onerror = () => {
             URL.revokeObjectURL(svgUrl);

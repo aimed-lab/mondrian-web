@@ -578,6 +578,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const hiddenSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         hiddenSvg.setAttribute("width", exportWidth);
         hiddenSvg.setAttribute("height", exportHeight);
+        hiddenSvg.setAttribute("viewBox", `0 0 ${exportWidth} ${exportHeight}`);
         hiddenSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
         const d3Svg = d3.select(hiddenSvg);
 

@@ -191,7 +191,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 bg-white border-b border-gray-100">
                                             <tr>
-                                                <th className={thCls}>Dir</th>
+                                                <th className={thCls}>Reg.</th>
                                                 <th className={thCls}>Name</th>
                                                 <th className={thCls}>Layer</th>
                                                 <th className={thCls}>−log₁₀p</th>

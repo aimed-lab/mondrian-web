@@ -517,6 +517,7 @@ function App() {
                     isLoading={isLoading}
                     onSelectionChange={handleSelectionChange}
                     onLayerZoom={handleLayerZoom}
+                    metadata={layoutJson?.metadata || {}}
                 />
 
                 {/* ── Bottom-right Interaction Stack ── */}

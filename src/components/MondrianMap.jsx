@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
+import { downloadEnrichmentJSON } from '../utils/downloadEnrichmentResults.js';
 
-const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null }, ref) {
+const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, metadata = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null }, ref) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const [selection, setSelection] = useState({ entities: new Set(), relationships: new Set() });
@@ -325,65 +326,19 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         return [clickedId];
     }, [selection.entities]);
 
-    const handleDownloadSummary = useCallback((clickedId) => {
+    const handleDownloadSelectedJSON = useCallback((clickedId) => {
         const targetIds = getDownloadTargetIds(clickedId);
-        const targets = entities.filter(e => targetIds.includes(e.id));
+        const targetIdSet = new Set(targetIds);
+        const targets = entities.filter(e => targetIdSet.has(e.id));
 
-        let content = '';
-        targets.forEach(rect => {
-            const tooltipParts = [];
-            const termName = rect.name ? rect.name : (rect.id.split('-')[1] || rect.id);
-            const termId = rect.id;
-            const title = `${termName} (${termId})`;
-            tooltipParts.push(title);
-            tooltipParts.push('—'.repeat(Math.floor(title.length * 0.5)));
+        const selectedRelationships = relationships.filter(r =>
+            targetIdSet.has(r.source) && targetIdSet.has(r.target)
+        );
 
-            const dirStr = rect.direction || 'unknown';
-            const sigStr = rect.significance_score ? rect.significance_score.toFixed(2) : 'N/A';
-            tooltipParts.push(`${dirStr} (-log10(p): ${sigStr})`);
-            if (rect.layer != null) {
-                tooltipParts.push(`# layer: ${rect.layer}`);
-            }
+        const filename = targetIds.length > 1 ? 'enrichment_results_selection.json' : `enrichment_results_${clickedId.replace(':', '_')}.json`;
 
-            tooltipParts.push(`# genes: ${rect.gene_count || 0}`);
-
-            if (rect.genes && rect.genes.length > 0) {
-                tooltipParts.push(`geneset: ${rect.genes.join(', ')}`);
-            }
-            content += tooltipParts.join('\n') + '\n\n';
-        });
-
-        const filename = targetIds.length > 1 ? 'summary_selection.txt' : `summary_${clickedId.replace(':', '_')}.txt`;
-        const blob = new Blob([content.trim()], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
-    }, [getDownloadTargetIds, entities]);
-
-    const handleDownloadGeneset = useCallback((clickedId) => {
-        const targetIds = getDownloadTargetIds(clickedId);
-        const targets = entities.filter(e => targetIds.includes(e.id));
-
-        let content = '"GO_ID","GO_Term_Name","Geneset"\n';
-        targets.forEach(e => {
-            const goId = `"${e.id}"`;
-            const goName = `"${(e.name || '').replace(/"/g, '""')}"`;
-            const genes = `"${(e.genes || []).join(', ')}"`;
-            content += `${goId},${goName},${genes}\n`;
-        });
-
-        const filename = targetIds.length > 1 ? 'geneset_selection.csv' : `geneset_${clickedId.replace(':', '_')}.csv`;
-        const blob = new Blob([content], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
-    }, [getDownloadTargetIds, entities]);
+        downloadEnrichmentJSON(targets, selectedRelationships, metadata, filename);
+    }, [getDownloadTargetIds, entities, relationships, metadata]);
 
     // --- Main Drawing Function ---
     const drawMap = useCallback((targetSvg, drawData, isInteractive = false) => {
@@ -721,15 +676,9 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
                 >
                     <button
                         className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors"
-                        onClick={() => { handleDownloadSummary(contextMenu.entityId); setContextMenu(null); }}
+                        onClick={() => { handleDownloadSelectedJSON(contextMenu.entityId); setContextMenu(null); }}
                     >
-                        Download Summary (.txt)
-                    </button>
-                    <button
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors"
-                        onClick={() => { handleDownloadGeneset(contextMenu.entityId); setContextMenu(null); }}
-                    >
-                        Download Geneset(s) (.csv)
+                        Download Enrichment Results (.json)
                     </button>
                 </div>
             )}

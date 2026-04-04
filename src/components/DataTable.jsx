@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { parseLINCSId } from '../utils/parseLINCSId.js';
 import { getLayerSuffix } from '../utils/layerSuffix.js';
+import { downloadEnrichmentJSON } from '../utils/downloadEnrichmentResults.js';
 
 // ---------------------------------------------------------------------------
 // ExperimentSummary — renders metadata in a structured, human-readable way.
@@ -100,52 +101,9 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
 
     const handleDownloadResults = useCallback(() => {
         if (!meta || !nodes) return;
-
-        const terms = nodes.map(n => {
-            const pVal = n.pValue !== undefined ? n.pValue : n.adjusted_p_value;
-            return {
-                direction: n.direction,
-                go_id: n.go_id.startsWith('GO:') ? n.go_id : `GO:${n.go_id}`,
-                name: n.name,
-                layer: n.layer || 0,
-                significance_score: Number(n.significance_score.toFixed(4)),
-                adjusted_p_value: typeof pVal === 'number' ? Number(pVal.toExponential(4)) : (pVal || null),
-                gene_count: n.gene_count || 0,
-                genes: n.genes || []
-            };
-        });
-
-        const crosstalks = edges.map(e => ({
-            source: e.source.startsWith('GO:') ? e.source : `GO:${e.source}`,
-            target: e.target.startsWith('GO:') ? e.target : `GO:${e.target}`,
-            weight: Number(e.weight.toFixed(4))
-        }));
-
-        const resultObj = {
-            metadata: {
-                case_study: meta.case_study || 'N/A',
-                contrast: meta.contrast || 'N/A',
-                library: meta.library || 'N/A',
-                up_gene_count: meta.up_gene_count || 0,
-                down_gene_count: meta.down_gene_count || 0,
-                term_count: nodes.length,
-                crosstalk_count: edges.length,
-                generated_at: meta.generated_at || new Date().toISOString()
-            },
-            terms: terms,
-            crosstalks: crosstalks
-        };
-
-        const content = JSON.stringify(resultObj, null, 2);
-        const blob = new Blob([content], { type: 'application/json;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
         const suffix = getLayerSuffix(currentLayer);
-        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}_table.json`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const filename = `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}_table.json`;
+        downloadEnrichmentJSON(nodes, edges, meta, filename);
     }, [meta, nodes, edges, currentLayer]);
 
     const panelCls = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none';

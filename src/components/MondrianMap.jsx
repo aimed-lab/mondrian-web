@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperat
 import * as d3 from 'd3';
 import { downloadEnrichmentJSON } from '../utils/downloadEnrichmentResults.js';
 
-const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, metadata = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null }, ref) {
+const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, metadata = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null, showAnnotations = true }, ref) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const [selection, setSelection] = useState({ entities: new Set(), relationships: new Set() });
@@ -344,6 +344,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     const drawMap = useCallback((targetSvg, drawData, isInteractive = false) => {
         const { drawEntities, drawRelationships, config } = drawData;
         const { selectionState } = config;
+        const shouldDrawLabels = config.showAnnotations !== undefined ? config.showAnnotations : true;
         // Allow override dimensions for export (ZIP downloads with different canvas sizes)
         const drawWidth = config.overrideWidth || width;
         const drawHeight = config.overrideHeight || height;
@@ -391,7 +392,8 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             .attr("opacity", () => (selectionState && (selectionState.entities.size > 0 || selectionState.relationships.size > 0)) ? 0 : 1)
             .style("transition", "opacity 0.2s ease");
 
-        // Draw relationships
+        // Draw relationships — also collect crosstalk line segments for label scoring
+        const crosstalkSegments = [];
         drawRelationships.forEach(rel => {
             const relId = `${rel.source}-${rel.target}`;
             const sRect = entityRects[rel.source];
@@ -400,6 +402,13 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             const getCorners = (r) => [{ x: r.x, y: r.y }, { x: r.x + r.width, y: r.y }, { x: r.x, y: r.y + r.height }, { x: r.x + r.width, y: r.y + r.height }];
             let best = { s: getCorners(sRect)[0], t: getCorners(tRect)[0], dist: Infinity };
             getCorners(sRect).forEach(s => getCorners(tRect).forEach(t => { const dist = Math.hypot(s.x - t.x, s.y - t.y); if (dist < best.dist) best = { s, t, dist }; }));
+
+            // Collect the two line segments of the L-shaped crosstalk path
+            crosstalkSegments.push(
+                { x1: best.s.x, y1: best.s.y, x2: best.t.x, y2: best.s.y }, // horizontal leg
+                { x1: best.t.x, y1: best.s.y, x2: best.t.x, y2: best.t.y }, // vertical leg
+            );
+
             const path = group.append("path")
                 .attr("d", `M ${best.s.x} ${best.s.y} L ${best.t.x} ${best.s.y} L ${best.t.x} ${best.t.y}`)
                 .attr("fill", "none").attr("stroke", "#1D1D1D").attr("stroke-width", 3)
@@ -417,7 +426,8 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             }
         });
 
-        // Draw entity rectangles
+        // Draw entity rectangles (without labels — labels rendered in a final pass)
+        const entityGroups = {};
         Object.values(entityRects).forEach(rect => {
             const g = group.append("g")
                 .attr("opacity", getOpacity('entity', rect.id))
@@ -448,10 +458,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             const termId = rect.id;
             const title = `${termName} (${termId})`;
             tooltipParts.push(title);
-            // OS tooltips use variable-width fonts, so exact character count makes '=' lines visually much longer. 
-            // We use a 0.75 multiplier heuristic to approximate the visual width of the average text.
             tooltipParts.push('—'.repeat(Math.floor(title.length * 0.5)));
-            // tooltipParts.push(``);
 
             const dirStr = rect.direction || 'unknown';
             const sigStr = rect.significance_score ? rect.significance_score.toFixed(2) : 'N/A';
@@ -467,26 +474,305 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             }
             g.append("title").text(tooltipParts.join('\n'));
 
-            // Label
-            const labelText = isRealData && rect.name
-                ? (rect.name.length > 18 ? rect.name.substring(0, 16) + '...' : rect.name)
-                : (rect.id.split('-')[1] || rect.id);
-            const fontSize = isRealData ? Math.max(7, Math.min(10, rect.width / 6)) : 10;
-
-            g.append("text")
-                .attr("x", rect.x + rect.width / 2)
-                .attr("y", rect.y - 4)
-                .attr("text-anchor", "middle")
-                .attr("fill", "#1D1D1D")
-                .attr("font-size", `${fontSize}px`)
-                .attr("font-family", "sans-serif")
-                .attr("font-weight", "bold")
-                .text(labelText);
+            entityGroups[rect.id] = g;
         });
 
         // Canvas border
         group.append("rect").attr("x", 0).attr("y", 0).attr("width", drawWidth).attr("height", drawHeight)
             .attr("fill", "none").attr("stroke", "#1D1D1D").attr("stroke-width", 8);
+
+        // ═══════════════════════════════════════════════════════
+        // LABEL PASS — Publication-ready smart placement
+        // ═══════════════════════════════════════════════════════
+        if (!shouldDrawLabels) return group;
+        const labelGroup = group.append("g").attr("class", "labels");
+        const allRects = Object.values(entityRects);
+        const CW = 0.55;      // char-width factor relative to font size
+        const padH = 4;        // horizontal padding inside pill
+        const padV = 2;        // vertical padding inside pill
+        const gap = 6;         // gap between block edge and label
+        const lineH = 1.25;    // line-height multiplier
+
+        // Density-adaptive font size base
+        const entityCount = allRects.length;
+        const fontBase = entityCount > 80 ? 7 : entityCount > 40 ? 8 : 9;
+        const fontMax  = entityCount > 80 ? 10 : entityCount > 40 ? 12 : 14;
+
+        // ── Helpers ──
+
+        const boxesOverlap = (a, b) =>
+            a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+        /** Test if a line segment intersects a box */
+        const segmentCrossesBox = (seg, box) => {
+            const isH = (seg.y1 === seg.y2);
+            if (isH) {
+                if (seg.y1 < box.y || seg.y1 > box.y + box.h) return false;
+                const minX = Math.min(seg.x1, seg.x2);
+                const maxX = Math.max(seg.x1, seg.x2);
+                return maxX > box.x && minX < box.x + box.w;
+            } else {
+                if (seg.x1 < box.x || seg.x1 > box.x + box.w) return false;
+                const minY = Math.min(seg.y1, seg.y2);
+                const maxY = Math.max(seg.y1, seg.y2);
+                return maxY > box.y && minY < box.y + box.h;
+            }
+        };
+
+        /**
+         * Smart line-breaking: produce balanced multi-line splits.
+         * Rules:
+         *  - 1 line if text fits within targetW
+         *  - 2 lines if text is longer, choosing the split that minimises max-line-width
+         *  - 3 lines only for very long names (>= 5 words)
+         *  - Never split a 1–2 letter word ("of", "to", "by", "in") to the start of a new line
+         *    unless it's followed by more words on the same line.
+         */
+        const smartLineBreak = (text, targetCharsPerLine) => {
+            const words = text.split(' ');
+            if (words.length <= 1 || text.length <= targetCharsPerLine) return [text];
+
+            // Try 2-line splits: pick the most balanced
+            let best2 = null, best2Max = Infinity;
+            for (let i = 1; i < words.length; i++) {
+                const l1 = words.slice(0, i).join(' ');
+                const l2 = words.slice(i).join(' ');
+                const mx = Math.max(l1.length, l2.length);
+                if (mx < best2Max) { best2Max = mx; best2 = [l1, l2]; }
+            }
+
+            // Try 3-line splits for long names
+            if (words.length >= 5 && text.length > targetCharsPerLine * 1.8) {
+                let best3 = null, best3Max = Infinity;
+                for (let i = 1; i < words.length - 1; i++) {
+                    for (let j = i + 1; j < words.length; j++) {
+                        const l1 = words.slice(0, i).join(' ');
+                        const l2 = words.slice(i, j).join(' ');
+                        const l3 = words.slice(j).join(' ');
+                        const mx = Math.max(l1.length, l2.length, l3.length);
+                        if (mx < best3Max) { best3Max = mx; best3 = [l1, l2, l3]; }
+                    }
+                }
+                // Use 3-line only if it meaningfully reduces max line width
+                if (best3 && best3Max < best2Max * 0.8) return best3;
+            }
+
+            return best2 || [text];
+        };
+
+        /** Compute multi-line label dimensions in SVG units */
+        const labelDims = (lines, fs) => {
+            const maxLineChars = Math.max(...lines.map(l => l.length));
+            const w = maxLineChars * fs * CW + padH * 2;
+            const h = lines.length * fs * lineH + padV * 2;
+            return { w, h };
+        };
+
+        /**
+         * Build 8 candidate positions around a rect.
+         * Returns { tx, ty, anchor, px, py } for each.
+         * tx/ty = text anchor point; px/py = pill top-left
+         */
+        const buildCandidates = (rect, lw, lh, fs, numLines) => {
+            const firstLineY = padV + fs * 0.85; // baseline of first line relative to pill top
+            return [
+                { // TOP CENTER
+                    name: 'tc',
+                    tx: rect.x + rect.width / 2, ty: rect.y - gap - lh + firstLineY,
+                    anchor: 'middle',
+                    px: rect.x + rect.width / 2 - lw / 2, py: rect.y - gap - lh,
+                },
+                { // BOTTOM CENTER
+                    name: 'bc',
+                    tx: rect.x + rect.width / 2, ty: rect.y + rect.height + gap + firstLineY,
+                    anchor: 'middle',
+                    px: rect.x + rect.width / 2 - lw / 2, py: rect.y + rect.height + gap,
+                },
+                { // RIGHT
+                    name: 'r',
+                    tx: rect.x + rect.width + gap + padH, ty: rect.y + rect.height / 2 - lh / 2 + firstLineY,
+                    anchor: 'start',
+                    px: rect.x + rect.width + gap, py: rect.y + rect.height / 2 - lh / 2,
+                },
+                { // LEFT
+                    name: 'l',
+                    tx: rect.x - gap - padH, ty: rect.y + rect.height / 2 - lh / 2 + firstLineY,
+                    anchor: 'end',
+                    px: rect.x - gap - lw, py: rect.y + rect.height / 2 - lh / 2,
+                },
+                { // TOP-LEFT (text left-aligned at block's left edge, above)
+                    name: 'tl',
+                    tx: rect.x + padH, ty: rect.y - gap - lh + firstLineY,
+                    anchor: 'start',
+                    px: rect.x, py: rect.y - gap - lh,
+                },
+                { // TOP-RIGHT (text right-aligned at block's right edge, above)
+                    name: 'tr',
+                    tx: rect.x + rect.width - padH, ty: rect.y - gap - lh + firstLineY,
+                    anchor: 'end',
+                    px: rect.x + rect.width - lw, py: rect.y - gap - lh,
+                },
+                { // BOTTOM-LEFT
+                    name: 'bl',
+                    tx: rect.x + padH, ty: rect.y + rect.height + gap + firstLineY,
+                    anchor: 'start',
+                    px: rect.x, py: rect.y + rect.height + gap,
+                },
+                { // BOTTOM-RIGHT
+                    name: 'br',
+                    tx: rect.x + rect.width - padH, ty: rect.y + rect.height + gap + firstLineY,
+                    anchor: 'end',
+                    px: rect.x + rect.width - lw, py: rect.y + rect.height + gap,
+                },
+            ];
+        };
+
+        /**
+         * Score a candidate position. Lower is better.
+         * Priority: whitespace (0) < gray lines (1) < crosstalks (5) < GO Terms (15)
+         */
+        const scoreCandidate = (c, lw, lh, idx, placedBoxes) => {
+            let score = idx * 0.01; // tiny tie-breaker for position preference
+            const box = { x: c.px, y: c.py, w: lw, h: lh };
+
+            // Out of canvas bounds — strongly penalised
+            if (box.x < -2 || box.y < -2 ||
+                box.x + box.w > drawWidth + 2 || box.y + box.h > drawHeight + 2) {
+                score += 100;
+            }
+
+            // Overlap with GO Term blocks (least preferred)
+            allRects.forEach(other => {
+                if (boxesOverlap(box, { x: other.x, y: other.y, w: other.width, h: other.height })) {
+                    score += 15;
+                }
+            });
+
+            // Overlap with already-placed labels
+            placedBoxes.forEach(placed => {
+                if (boxesOverlap(box, placed)) {
+                    score += 12;
+                }
+            });
+
+            // Overlap with crosstalks (black edge lines — scientifically meaningful)
+            crosstalkSegments.forEach(seg => {
+                if (segmentCrossesBox(seg, box)) score += 5;
+            });
+
+            // Overlap with gray subdivision lines (no scientific meaning)
+            mondrianLines.forEach(seg => {
+                if (segmentCrossesBox(seg, box)) score += 1;
+            });
+
+            return score;
+        };
+
+        // ── Place labels ──
+        const placedLabelBoxes = [];
+
+        // Sort by significance (most significant first) — they get priority placement
+        const sortedRects = [...allRects].sort((a, b) =>
+            (b.significance_score || 0) - (a.significance_score || 0)
+        );
+
+        sortedRects.forEach(rect => {
+            const opacity = getOpacity('entity', rect.id);
+
+            // Adaptive font size
+            const fontSize = isRealData
+                ? Math.max(fontBase, Math.min(fontMax, rect.width / 4))
+                : 10;
+
+            // Full term name by default
+            const fullName = (isRealData && rect.name) ? rect.name : (rect.id.split('-')[1] || rect.id);
+
+            // Target chars per line ≈ proportional to block width
+            const targetCharsPerLine = Math.max(12, Math.round(rect.width * 1.5 / (fontSize * CW)));
+
+            // Build full-name multi-line layout
+            const lines = smartLineBreak(fullName, targetCharsPerLine);
+            const dims = labelDims(lines, fontSize);
+            const candidates = buildCandidates(rect, dims.w, dims.h, fontSize, lines.length);
+
+            // Score all 8 positions with full name
+            let bestIdx = 0, bestScore = Infinity;
+            candidates.forEach((c, idx) => {
+                const s = scoreCandidate(c, dims.w, dims.h, idx, placedLabelBoxes);
+                if (s < bestScore) { bestScore = s; bestIdx = idx; }
+            });
+
+            let finalLines = lines;
+            let finalDims = dims;
+            let finalCandidate = candidates[bestIdx];
+
+            // If best position overlaps GO Terms (score >= 15), try a concise version
+            if (bestScore >= 15 && fullName.length > 20) {
+                const concise = fullName.length > 20
+                    ? fullName.substring(0, 18).trimEnd() + '…'
+                    : fullName;
+                const cLines = [concise]; // single line for concise
+                const cDims = labelDims(cLines, fontSize);
+                const cCandidates = buildCandidates(rect, cDims.w, cDims.h, fontSize, 1);
+
+                let cBestIdx = 0, cBestScore = Infinity;
+                cCandidates.forEach((c, idx) => {
+                    const s = scoreCandidate(c, cDims.w, cDims.h, idx, placedLabelBoxes);
+                    if (s < cBestScore) { cBestScore = s; cBestIdx = idx; }
+                });
+
+                // Use concise only if it actually scores better
+                if (cBestScore < bestScore) {
+                    finalLines = cLines;
+                    finalDims = cDims;
+                    finalCandidate = cCandidates[cBestIdx];
+                    bestScore = cBestScore;
+                }
+            }
+
+            // Register the placed bounding box
+            placedLabelBoxes.push({
+                x: finalCandidate.px, y: finalCandidate.py,
+                w: finalDims.w, h: finalDims.h,
+            });
+
+            // ── Render ──
+            const lg = labelGroup.append("g").attr("opacity", opacity);
+
+            // White background pill
+            lg.append("rect")
+                .attr("x", finalCandidate.px)
+                .attr("y", finalCandidate.py)
+                .attr("width", finalDims.w)
+                .attr("height", finalDims.h)
+                .attr("rx", 2).attr("ry", 2)
+                .attr("fill", "white")
+                .attr("opacity", 0.88);
+
+            // Multi-line text using tspan
+            const textEl = lg.append("text")
+                .attr("x", finalCandidate.tx)
+                .attr("y", finalCandidate.ty)
+                .attr("text-anchor", finalCandidate.anchor)
+                .attr("fill", "#1D1D1D")
+                .attr("font-size", `${fontSize}px`)
+                .attr("font-family", "'Inter', 'Helvetica Neue', sans-serif")
+                .attr("font-weight", "600")
+                .attr("letter-spacing", "0.01em");
+
+            finalLines.forEach((line, i) => {
+                textEl.append("tspan")
+                    .attr("x", finalCandidate.tx)
+                    .attr("dy", i === 0 ? 0 : `${fontSize * lineH}px`)
+                    .text(line);
+            });
+
+            // Interactive: clickable label
+            if (isInteractive) {
+                lg.style("cursor", "pointer");
+                lg.on("click", (e) => handleEntityClick(e, rect.id));
+            }
+        });
 
         return group;
     }, [relationships, width, height, selection, getEntityContext, getEdgeContext, generateMondrianLines, getBlockDims, getColor, isRealData]);
@@ -502,7 +788,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             svg.selectAll("*").remove();
             return;
         }
-        const contentGroup = drawMap(svg, { drawEntities: layoutEntities, drawRelationships: relationships, config: { selectionState: selection } }, true);
+        const contentGroup = drawMap(svg, { drawEntities: layoutEntities, drawRelationships: relationships, config: { selectionState: selection, showAnnotations } }, true);
 
         // Within-layer zoom (only active when Ctrl is held)
         const zoom = d3.zoom()
@@ -559,7 +845,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
             resizeObserver.disconnect();
             if (svgEl) svgEl.removeEventListener('wheel', handleWheel);
         };
-    }, [layoutEntities, relationships, width, height, selection, drawMap, onLayerZoom]);
+    }, [layoutEntities, relationships, width, height, selection, drawMap, onLayerZoom, showAnnotations]);
 
     // --- SVG Export ---
     const getSVGContent = useCallback((mode, customEntities = null, customRelationships = null, customWidth = null, customHeight = null) => {
@@ -585,12 +871,12 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         drawMap(d3Svg, {
             drawEntities: dlEntities,
             drawRelationships: dlRelationships,
-            config: { selectionState: null, overrideWidth: exportWidth, overrideHeight: exportHeight }
+            config: { selectionState: null, overrideWidth: exportWidth, overrideHeight: exportHeight, showAnnotations }
         }, false);
 
         const serializer = new XMLSerializer();
         return serializer.serializeToString(hiddenSvg);
-    }, [layoutEntities, relationships, selection, drawMap, width, height, resolveLayout]);
+    }, [layoutEntities, relationships, selection, drawMap, width, height, resolveLayout, showAnnotations]);
 
     const handleDownload = useCallback((mode, customFilename = null) => {
         const svgString = getSVGContent(mode);
@@ -655,7 +941,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
                 }
             }
         }
-    }), [handleDownload, getEntityContext, getEdgeContext, relationships]);
+    }), [handleDownload, getSVGContent, getEntityContext, getEdgeContext, relationships]);
 
     return (
         <div ref={containerRef} className="w-full h-screen overflow-hidden bg-gray-100 relative" onClick={() => contextMenu && setContextMenu(null)} onContextMenu={(e) => { if (contextMenu) { e.preventDefault(); setContextMenu(null); } }}>

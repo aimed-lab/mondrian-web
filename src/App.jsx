@@ -5,7 +5,7 @@ import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
 import AIExplainPanel from './components/AIExplainPanel';
 import LayerZoomControl from './components/LayerZoomControl';
-import { ChevronLeft, ChevronRight, Menu, Sparkles, Download, Archive } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, Sparkles, Download, Archive, Type } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 import { getLayerSuffix } from './utils/layerSuffix.js';
@@ -29,13 +29,13 @@ const svgToPngBlob = (svgString, originalWidth = 1000, originalHeight = 1000) =>
 
         const img = new Image();
         const svgUrl = URL.createObjectURL(new Blob([scaledSvgString], { type: "image/svg+xml;charset=utf-8" }));
-        
+
         img.onload = () => {
             const canvas = document.createElement("canvas");
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext("2d");
-            
+
             // For a truly crisp background, ensure image smoothing properties are enabled
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
@@ -43,7 +43,7 @@ const svgToPngBlob = (svgString, originalWidth = 1000, originalHeight = 1000) =>
             ctx.fillStyle = "#F3F4F6"; // background color (matches bg-gray-100)
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            
+
             URL.revokeObjectURL(svgUrl);
             canvas.toBlob((blob) => {
                 if (blob) resolve(blob);
@@ -69,6 +69,7 @@ function App() {
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
     const [inputMode, setInputMode] = useState('custom');
+    const [showAnnotations, setShowAnnotations] = useState(true);
 
     // --- AI Explain: nodes currently selected on the Mondrian Map ---
     const [selectedNodes, setSelectedNodes] = useState([]);
@@ -537,6 +538,7 @@ function App() {
                     onSelectionChange={handleSelectionChange}
                     onLayerZoom={handleLayerZoom}
                     metadata={layoutJson?.metadata || {}}
+                    showAnnotations={showAnnotations}
                 />
 
                 {/* ── Bottom-right Interaction Stack ── */}
@@ -553,106 +555,6 @@ function App() {
                             />
                         </div>
                     )}
-
-                    {/* Bottom-right button stack */}
-                    <div className="flex flex-col items-stretch gap-2 w-full pointer-events-auto">
-                        {/* Standard downloads (hidden in selection mode) */}
-                        {!isSelectionActive && layoutJson && (
-                            <AnimatePresence>
-                                <motion.button
-                                    key="dl-full"
-                                    initial={{ opacity: 0, y: 8 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 8 }}
-                                    transition={{ duration: 0.18 }}
-                                    onClick={async () => {
-                                        const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                        const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                        const filename = `mondrian_map_full_${caseName}${layerSuffix}.png`;
-                                        
-                                        if (!mondrianMapRef.current) return;
-                                        const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                        const layerEntitiesScaled = rescaleEntitiesForCanvas(entities, canvasSize);
-                                        const svgString = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, relationships, canvasSize, canvasSize);
-                                        
-                                        try {
-                                            const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
-                                            const url = URL.createObjectURL(pngBlob);
-                                            const link = document.createElement("a");
-                                            link.href = url;
-                                            link.download = filename;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                            URL.revokeObjectURL(url);
-                                        } catch (e) {
-                                            console.error("Failed to generate PNG map:", e);
-                                        }
-                                    }}
-                                    className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
-                                    title={mapDownloadLabel}
-                                >
-                                    <Download size={14} />
-                                    {mapDownloadLabel}
-                                </motion.button>
-
-                                <motion.button
-                                    key="dl-zip"
-                                    initial={{ opacity: 0, y: 8 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 8 }}
-                                    transition={{ duration: 0.18, delay: 0.05 }}
-                                    onClick={handleDownloadAllLayersZip}
-                                    className="flex items-center justify-center gap-2 bg-black text-white px-4 py-2.5 shadow-md hover:bg-gray-900 active:bg-gray-700 transition-colors text-xs font-bold uppercase tracking-wider"
-                                    title="Download all layer maps in a ZIP archive"
-                                >
-                                    <Archive size={14} />
-                                    Download Mondrian Maps (All Layers)
-                                </motion.button>
-                            </AnimatePresence>
-                        )}
-
-                        {/* Selection-specific downloads */}
-                        {isSelectionActive && (
-                            <AnimatePresence>
-                                <motion.button
-                                    key="dl-selection"
-                                    initial={{ opacity: 0, y: 8 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 8 }}
-                                    transition={{ duration: 0.18 }}
-                                    onClick={async () => {
-                                        const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                        const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                        const filename = `mondrian_map_selection_${caseName}${layerSuffix}.png`;
-                                        
-                                        if (!mondrianMapRef.current) return;
-                                        const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                        const svgString = mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
-                                        
-                                        try {
-                                            const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
-                                            const url = URL.createObjectURL(pngBlob);
-                                            const link = document.createElement("a");
-                                            link.href = url;
-                                            link.download = filename;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                            URL.revokeObjectURL(url);
-                                        } catch (e) {
-                                            console.error("Failed to generate Selection PNG map:", e);
-                                        }
-                                    }}
-                                    className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
-                                    title="Download only the currently selected terms"
-                                >
-                                    <Download size={14} />
-                                    Download Mondrian Map (Selected)
-                                </motion.button>
-                            </AnimatePresence>
-                        )}
-                    </div>
                 </div>
             </div>
 
@@ -703,6 +605,101 @@ function App() {
                                     />
                                 }
                             />
+
+                            {/* ── Map Download Controls ── */}
+                            <div className="flex flex-col gap-2 mt-8">
+                                {/* Annotation Toggle */}
+                                <button
+                                    onClick={() => setShowAnnotations(prev => !prev)}
+                                    className={`w-full py-3 px-4 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm ${showAnnotations
+                                        ? 'bg-white text-black border-2 border-black hover:bg-gray-50'
+                                        : 'bg-gray-200 text-gray-500 border-2 border-gray-400 hover:bg-gray-100'
+                                        }`}
+                                    title={showAnnotations ? 'Hide annotations from map and exports' : 'Show annotations on map and exports'}
+                                >
+                                    <Type size={14} />
+                                    {showAnnotations ? 'Annotations On' : 'Annotations Off'}
+                                </button>
+
+                                {/* Layer / Full map download (hidden during selection) */}
+                                {!isSelectionActive && (
+                                    <button
+                                        onClick={async () => {
+                                            const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                            const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                            const filename = `mondrian_map_full_${caseName}${layerSuffix}.png`;
+
+                                            if (!mondrianMapRef.current) return;
+                                            const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                            const layerEntitiesScaled = rescaleEntitiesForCanvas(entities, canvasSize);
+                                            const svgString = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, relationships, canvasSize, canvasSize);
+
+                                            try {
+                                                const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
+                                                const url = URL.createObjectURL(pngBlob);
+                                                const link = document.createElement("a");
+                                                link.href = url;
+                                                link.download = filename;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                                URL.revokeObjectURL(url);
+                                            } catch (e) {
+                                                console.error("Failed to generate PNG map:", e);
+                                            }
+                                        }}
+                                        className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                        title={mapDownloadLabel}
+                                    >
+                                        <Download size={14} />
+                                        {mapDownloadLabel}
+                                    </button>
+                                )}
+
+                                {/* Selection-specific download */}
+                                {isSelectionActive && (
+                                    <button
+                                        onClick={async () => {
+                                            const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                            const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                            const filename = `mondrian_map_selection_${caseName}${layerSuffix}.png`;
+
+                                            if (!mondrianMapRef.current) return;
+                                            const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                            const svgString = mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
+
+                                            try {
+                                                const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
+                                                const url = URL.createObjectURL(pngBlob);
+                                                const link = document.createElement("a");
+                                                link.href = url;
+                                                link.download = filename;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                                URL.revokeObjectURL(url);
+                                            } catch (e) {
+                                                console.error("Failed to generate Selection PNG map:", e);
+                                            }
+                                        }}
+                                        className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                        title="Download only the currently selected terms"
+                                    >
+                                        <Download size={14} />
+                                        Download Mondrian Map (Selected)
+                                    </button>
+                                )}
+
+                                {/* Bulk ZIP download */}
+                                <button
+                                    onClick={handleDownloadAllLayersZip}
+                                    className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                    title="Download all layer maps as SVG + PNG in a ZIP archive"
+                                >
+                                    <Archive size={14} />
+                                    Download Mondrian Maps (All Layers)
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </motion.div>

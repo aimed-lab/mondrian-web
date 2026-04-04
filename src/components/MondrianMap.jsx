@@ -352,14 +352,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const gridSize = 10;
         const snap = (val) => Math.round(val / gridSize) * gridSize;
 
-        // Grid
-        const gridGroup = group.append("g").attr("class", "grid");
-        gridGroup.selectAll("line.v").data(d3.range(0, drawWidth + 1, gridSize)).enter().append("line")
-            .attr("class", "v").attr("x1", d => d).attr("y1", 0).attr("x2", d => d).attr("y2", drawHeight)
-            .attr("stroke", "#F0F0F0").attr("stroke-width", 1);
-        gridGroup.selectAll("line.h").data(d3.range(0, drawHeight + 1, gridSize)).enter().append("line")
-            .attr("class", "h").attr("x1", 0).attr("y1", d => d).attr("x2", drawWidth).attr("y2", d => d)
-            .attr("stroke", "#F0F0F0").attr("stroke-width", 1);
+        // Grid (removed per user request)
 
         // Build entity rectangles
         const entityRects = {};

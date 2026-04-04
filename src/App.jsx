@@ -546,11 +546,29 @@ function App() {
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: 8 }}
                                     transition={{ duration: 0.18 }}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
                                         const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                        const filename = `mondrian_map_full_${caseName}${layerSuffix}.svg`;
-                                        mondrianMapRef.current?.downloadMap('full', filename);
+                                        const filename = `mondrian_map_full_${caseName}${layerSuffix}.png`;
+                                        
+                                        if (!mondrianMapRef.current) return;
+                                        const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                        const layerEntitiesScaled = rescaleEntitiesForCanvas(entities, canvasSize);
+                                        const svgString = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, relationships, canvasSize, canvasSize);
+                                        
+                                        try {
+                                            const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
+                                            const url = URL.createObjectURL(pngBlob);
+                                            const link = document.createElement("a");
+                                            link.href = url;
+                                            link.download = filename;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                            URL.revokeObjectURL(url);
+                                        } catch (e) {
+                                            console.error("Failed to generate PNG map:", e);
+                                        }
                                     }}
                                     className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
                                     title={mapDownloadLabel}
@@ -584,11 +602,28 @@ function App() {
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: 8 }}
                                     transition={{ duration: 0.18 }}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
                                         const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                        const filename = `mondrian_map_selection_${caseName}${layerSuffix}.svg`;
-                                        mondrianMapRef.current?.downloadMap('selection', filename);
+                                        const filename = `mondrian_map_selection_${caseName}${layerSuffix}.png`;
+                                        
+                                        if (!mondrianMapRef.current) return;
+                                        const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                        const svgString = mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
+                                        
+                                        try {
+                                            const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
+                                            const url = URL.createObjectURL(pngBlob);
+                                            const link = document.createElement("a");
+                                            link.href = url;
+                                            link.download = filename;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                            URL.revokeObjectURL(url);
+                                        } catch (e) {
+                                            console.error("Failed to generate Selection PNG map:", e);
+                                        }
                                     }}
                                     className="flex items-center justify-center gap-2 bg-white text-black border border-gray-300 px-4 py-2.5 shadow-md hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs font-bold uppercase tracking-wider min-w-[200px]"
                                     title="Download only the currently selected terms"

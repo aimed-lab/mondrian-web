@@ -101,57 +101,52 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
     const handleDownloadResults = useCallback(() => {
         if (!meta || !nodes) return;
 
-        const isFiltered = filteredNodes !== undefined;
-        let content = "ENRICHMENT ANALYSIS RESULTS" + (isFiltered ? ` — ${currentLayer === null ? 'All Layers' : `Layer ${currentLayer}`}` : "") + "\n";
-        content += "===========================\n\n";
-        content += "METADATA\n";
-        content += `Case Study: ${meta.case_study || 'N/A'}\n`;
-        content += `Contrast: ${meta.contrast || 'N/A'}\n`;
-        content += `Library: ${meta.library || 'N/A'}\n`;
-        content += `Up Genes: ${meta.up_gene_count || 0}\n`;
-        content += `Down Genes: ${meta.down_gene_count || 0}\n`;
-        content += `GO Terms: ${nodes.length}\n`;
-        content += `Crosstalks: ${edges.length}\n`;
-        content += `Generated at: ${meta.generated_at || new Date().toISOString()}\n\n`;
-
-        content += "GO TERMS\n";
-        content += "Direction,GO ID,Term Name,Layer,-log10(p),Adj P-value,Gene Count,Genes\n";
-        nodes.forEach(n => {
+        const terms = nodes.map(n => {
             const pVal = n.pValue !== undefined ? n.pValue : n.adjusted_p_value;
-            const pValStr = (typeof pVal === 'number') ? pVal.toExponential(4) : (pVal || '—');
-            const row = [
-                n.direction,
-                n.go_id.startsWith('GO:') ? n.go_id : `GO:${n.go_id}`,
-                `"${n.name.replace(/"/g, '""')}"`,
-                n.layer || 0,
-                n.significance_score.toFixed(4),
-                pValStr,
-                n.gene_count,
-                `"${(n.genes || []).join(', ')}"`
-            ];
-            content += row.join(',') + "\n";
+            return {
+                direction: n.direction,
+                go_id: n.go_id.startsWith('GO:') ? n.go_id : `GO:${n.go_id}`,
+                name: n.name,
+                layer: n.layer || 0,
+                significance_score: Number(n.significance_score.toFixed(4)),
+                adjusted_p_value: typeof pVal === 'number' ? Number(pVal.toExponential(4)) : (pVal || null),
+                gene_count: n.gene_count || 0,
+                genes: n.genes || []
+            };
         });
 
-        if (edges.length > 0) {
-            content += "\nCROSSTALKS\n";
-            content += "Source,Target,Jaccard\n";
-            edges.forEach(e => {
-                const source = e.source.startsWith('GO:') ? e.source : `GO:${e.source}`;
-                const target = e.target.startsWith('GO:') ? e.target : `GO:${e.target}`;
-                content += `${source},${target},${e.weight.toFixed(4)}\n`;
-            });
-        }
+        const crosstalks = edges.map(e => ({
+            source: e.source.startsWith('GO:') ? e.source : `GO:${e.source}`,
+            target: e.target.startsWith('GO:') ? e.target : `GO:${e.target}`,
+            weight: Number(e.weight.toFixed(4))
+        }));
 
-        const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+        const resultObj = {
+            metadata: {
+                case_study: meta.case_study || 'N/A',
+                contrast: meta.contrast || 'N/A',
+                library: meta.library || 'N/A',
+                up_gene_count: meta.up_gene_count || 0,
+                down_gene_count: meta.down_gene_count || 0,
+                term_count: nodes.length,
+                crosstalk_count: edges.length,
+                generated_at: meta.generated_at || new Date().toISOString()
+            },
+            terms: terms,
+            crosstalks: crosstalks
+        };
+
+        const content = JSON.stringify(resultObj, null, 2);
+        const blob = new Blob([content], { type: 'application/json;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
         const suffix = getLayerSuffix(currentLayer);
-        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}_table.csv`);
+        link.setAttribute("download", `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}_table.json`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    }, [meta, nodes, edges, currentLayer, filteredNodes]);
+    }, [meta, nodes, edges, currentLayer]);
 
     const panelCls = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none';
     const headerCls = 'flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5';
@@ -195,7 +190,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
                                                 <th className={thCls}>Name</th>
                                                 <th className={thCls}>Layer</th>
                                                 <th className={thCls}>−log₁₀p</th>
-                                                <th className={thCls}>Genes</th>
+                                                <th className={thCls}># Genes</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -239,7 +234,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
                                                 <tr>
                                                     <th className={thCls}>Source</th>
                                                     <th className={thCls}>Target</th>
-                                                    <th className={thCls}>Jaccard</th>
+                                                    <th className={thCls}>Weight</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -272,7 +267,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
                             <button
                                 onClick={handleDownloadResults}
                                 className="mt-2 w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                title={`Download results for ${currentLayer === null ? 'all layers' : `layer ${currentLayer}`} as CSV`}
+                                title={`Download results for ${currentLayer === null ? 'all layers' : `layer ${currentLayer}`} as JSON`}
                             >
                                 <Download size={14} />
                                 Download Enrichment Results

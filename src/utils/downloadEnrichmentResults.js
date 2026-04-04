@@ -12,7 +12,7 @@ export function downloadEnrichmentJSON(nodes, edges, metadata, filename) {
             significance_score: n.significance_score ? Number(n.significance_score.toFixed(4)) : 0,
             adjusted_p_value: typeof pVal === 'number' ? Number(pVal.toExponential(4)) : (pVal || null),
             gene_count: n.gene_count || 0,
-            genes: n.genes || []
+            geneset: n.genes || []
         };
     });
 
@@ -34,8 +34,12 @@ export function downloadEnrichmentJSON(nodes, edges, metadata, filename) {
             contrast: meta.contrast || 'N/A',
             library: meta.library || 'N/A',
             up_gene_count: meta.up_gene_count || 0,
+            up_geneset: meta.up_genes || [],
             down_gene_count: meta.down_gene_count || 0,
-            term_count: terms.length,
+            down_geneset: meta.down_genes || [],
+            up_term_count: terms.filter(t => t.direction === 'upregulated').length,
+            down_term_count: terms.filter(t => t.direction === 'downregulated').length,
+            total_term_count: terms.length,
             crosstalk_count: crosstalks.length,
             generated_at: meta.generated_at || new Date().toISOString()
         },

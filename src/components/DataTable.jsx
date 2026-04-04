@@ -102,7 +102,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
     const handleDownloadResults = useCallback(() => {
         if (!meta || !nodes) return;
         const suffix = getLayerSuffix(currentLayer);
-        const filename = `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}_table.json`;
+        const filename = `enrichment_results_${(meta.case_study || 'analysis').replace(/\s+/g, '_')}${suffix}.json`;
         downloadEnrichmentJSON(nodes, edges, meta, filename);
     }, [meta, nodes, edges, currentLayer]);
 

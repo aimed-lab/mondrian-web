@@ -21,8 +21,8 @@ function App() {
     const [error, setError] = useState(null);
     const [info, setInfo] = useState(null);
     const [hierarchy, setHierarchy] = useState(null);
-    const [carryParentNodes, setCarryParentNodes] = useState(true);
-    const [showAnimations, setShowAnimations] = useState(true);
+    const [carryParentNodes, setCarryParentNodes] = useState(false);
+    const [showAnimations, setShowAnimations] = useState(false);
 
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -99,6 +99,19 @@ function App() {
             if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
         };
     }, []);
+
+    const prevLayerRef = useRef(parameters.selectedLayer);
+    useEffect(() => {
+        const current = parameters.selectedLayer;
+        const prev = prevLayerRef.current;
+
+        if (current === null && prev !== null) {
+            setShowAnnotations(false);
+        } else if (current !== null && prev === null) {
+            setShowAnnotations(true);
+        }
+        prevLayerRef.current = current;
+    }, [parameters.selectedLayer]);
 
     // No auto-load — start empty, render only after user triggers analysis
 
@@ -629,7 +642,7 @@ function App() {
                     <div className="w-full h-full overflow-hidden">
                         <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
                             {/* NEW: Collapsible Options at the very top */}
-                            <CollapsibleSection title="Options" defaultOpen={true}>
+                            <CollapsibleSection title="Options" defaultOpen={false}>
                                 <div className="flex flex-col gap-4 px-1">
                                     <ToggleSwitch
                                         id="toggle-annotations"
@@ -640,7 +653,7 @@ function App() {
                                     />
                                     <ToggleSwitch
                                         id="toggle-carry"
-                                        label="Carry Parent Nodes"
+                                        label="Hierarchical Term Projection"
                                         checked={carryParentNodes}
                                         onChange={setCarryParentNodes}
                                         icon={<Archive size={14} />}
@@ -684,14 +697,9 @@ function App() {
                             />
 
                             {/* Downloads — grouped below everything */}
-                            <div className="flex flex-col gap-8 mt-12 pb-20">
+                            <div className="flex flex-col gap-8 mt-8 pb-20">
                                 <div>
-                                    <h2 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-2">
-                                        <div className="h-[1px] bg-gray-200 flex-1" />
-                                        Downloads
-                                        <div className="h-[1px] bg-gray-200 flex-1" />
-                                    </h2>
-                                    <div className="flex flex-col gap-2 px-1">
+                                    <div className="flex flex-col gap-2">
                                         {/* Layer / Full map download (hidden during selection) */}
                                         {!isSelectionActive && (
                                             <button
@@ -842,7 +850,7 @@ function mapRealDataToEntities(layoutJson, parameters, hierarchy = null) {
     // Sort by significance and limit
     currentLayerNodes.sort((a, b) => b.significance_score - a.significance_score);
     currentLayerNodes = currentLayerNodes.slice(0, maxBlocks);
-    
+
     const currentLayerNodeIds = new Set(currentLayerNodes.map(n => n.go_id));
 
     // 2. Identify Ghost Parent Nodes
@@ -850,19 +858,19 @@ function mapRealDataToEntities(layoutJson, parameters, hierarchy = null) {
     let ghostNodes = [];
     if (carryParentNodes && selectedLayer !== null && hierarchy) {
         const parentLayer = selectedLayer + 1;
-        const parentCandidates = layoutJson.nodes.filter(n => 
+        const parentCandidates = layoutJson.nodes.filter(n =>
             n.layer === parentLayer && n.adjusted_p_value <= pValueCutoff
         );
 
         parentCandidates.forEach(parent => {
             // Check if this parent has ANY descendant in currentLayerNodes
             const hasDescendant = checkHasDescendantInList(parent.go_id, currentLayerNodeIds, hierarchy);
-            
+
             if (!hasDescendant) {
                 // If it doesn't have an enriched descendant, it's a candidate for a ghost
                 // Ghost nodes should not collide with real nodes or other ghosts
                 const ghost = { ...parent, isGhost: true };
-                
+
                 // collision check (raw grid coords)
                 const collides = checkCollision(ghost, currentLayerNodes, 30); // 30 is a safe threshold
                 if (!collides) {
@@ -919,7 +927,7 @@ function mapRealDataToEntities(layoutJson, parameters, hierarchy = null) {
     // To ensure GO-GO crosstalks are not dropped by high-weight Parent edges, 
     // we use a larger limit if Parent carrying is active and prioritize GO-GO.
     const effectiveMaxEdges = carryParentNodes ? maxEdges + 150 : maxEdges;
-    
+
     // Identify which nodes are ghosts
     const ghostIdSet = new Set(ghostNodes.map(n => `GO:${n.go_id}`));
 
@@ -981,7 +989,7 @@ function checkCollision(candidate, existingNodes, threshold = 20) {
         // Check if rectangles overlap (with small padding threshold)
         const overlapX = Math.abs(cx - nx) < (cw / 2 + nw / 2 + threshold);
         const overlapY = Math.abs(cy - ny) < (ch / 2 + nh / 2 + threshold);
-        
+
         if (overlapX && overlapY) return true;
     }
     return false;
@@ -992,21 +1000,23 @@ function checkCollision(candidate, existingNodes, threshold = 20) {
  */
 function ToggleSwitch({ id, label, checked, onChange, icon }) {
     return (
-        <div className="flex items-center justify-between py-2 group">
+        <div
+            className="flex items-center justify-between py-1.5 group cursor-pointer select-none"
+            onClick={() => onChange(!checked)}
+        >
             <div className="flex items-center gap-3 text-gray-700">
                 {icon && <span className="text-gray-400 group-hover:text-black transition-colors">{icon}</span>}
-                <label htmlFor={id} className="text-sm font-medium cursor-pointer select-none">
+                <span className="text-sm font-medium">
                     {label}
-                </label>
+                </span>
             </div>
-            <div 
-                className={`relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${checked ? 'bg-black' : 'bg-gray-200'}`}
-                onClick={() => onChange(!checked)}
+            <div
+                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${checked ? 'bg-black' : 'bg-gray-200'}`}
                 role="switch"
                 aria-checked={checked}
             >
                 <span
-                    className={`${checked ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out`}
+                    className={`${checked ? 'translate-x-3.5' : 'translate-x-0.5'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ease-in-out`}
                 />
             </div>
         </div>

@@ -13,6 +13,7 @@
     "@rollup/rollup-linux-x64-gnu": "^4.60.1",
     "clsx": "^2.1.1",
     "d3": "^7.9.0",
+    "docx": "^9.6.1",
     "framer-motion": "^11.2.10",
     "jszip": "^3.10.1",
     "lucide-react": "^0.395.0",

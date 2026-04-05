@@ -7,10 +7,13 @@ IMPLEMENTATION_PLAN.md
 .claude/
 claude/
 results/
+result_res/
 res2/
 public/data/go_layers.py
 *pdf
 *mjs
+manuscript/
+*md
 
 # Python virtual environment
 python/venv/

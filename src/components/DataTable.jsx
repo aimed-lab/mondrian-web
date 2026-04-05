@@ -225,7 +225,7 @@ const DataTable = ({ layoutJson, filteredNodes, filteredEdges, onSelectionToggle
                             <button
                                 onClick={handleDownloadResults}
                                 className="mt-2 w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                title={`Download results for ${currentLayer === null ? 'all layers' : `layer ${currentLayer}`} as JSON`}
+                                title={`Download enrichment results for ${currentLayer === null ? 'all layers' : `layer ${currentLayer}`} as JSON.`}
                             >
                                 <Download size={14} />
                                 Download Enrichment Results

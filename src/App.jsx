@@ -11,52 +11,8 @@ import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.
 import { getLayerSuffix } from './utils/layerSuffix.js';
 import JSZip from 'jszip';
 import InfoPanel from './components/InfoPanel';
+import { svgToPngBlob } from './utils/imageExport.js';
 import { computeRequiredCanvasSize } from './utils/canvasAutoSize.js';
-
-const svgToPngBlob = (svgString, originalWidth = 1000, originalHeight = 1000) => {
-    return new Promise((resolve, reject) => {
-        // Use a 4x scale factor for "shiny publication-ready" high resolution
-        const scaleFactor = 4;
-        const width = originalWidth * scaleFactor;
-        const height = originalHeight * scaleFactor;
-
-        // Replace the width and height attributes in the SVG string to ensure the browser
-        // rasterizes it natively at the high-res dimensions, preventing blurry upscaling.
-        // The viewBox added earlier ensures everything perfectly scales to fit.
-        const scaledSvgString = svgString
-            .replace(/width="[^"]+"/, `width="${width}"`)
-            .replace(/height="[^"]+"/, `height="${height}"`);
-
-        const img = new Image();
-        const svgUrl = URL.createObjectURL(new Blob([scaledSvgString], { type: "image/svg+xml;charset=utf-8" }));
-
-        img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext("2d");
-
-            // For a truly crisp background, ensure image smoothing properties are enabled
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-
-            ctx.fillStyle = "#F3F4F6"; // background color (matches bg-gray-100)
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-
-            URL.revokeObjectURL(svgUrl);
-            canvas.toBlob((blob) => {
-                if (blob) resolve(blob);
-                else reject(new Error("Failed to convert canvas to blob"));
-            }, "image/png", 1.0); // 1.0 = highest quality for PNG (though technically only applies to JPEG/WebP)
-        };
-        img.onerror = () => {
-            URL.revokeObjectURL(svgUrl);
-            reject(new Error("Failed to load SVG into image"));
-        };
-        img.src = svgUrl;
-    });
-};
 
 function App() {
     // --- Data State ---
@@ -71,7 +27,7 @@ function App() {
     const [inputMode, setInputMode] = useState('custom');
     const [showAnnotations, setShowAnnotations] = useState(true);
 
-    // --- AI Explain: nodes currently selected on the Mondrian Map ---
+    // --- AI Explain: nodes currently selected on the MondrianMap ---
     const [selectedNodes, setSelectedNodes] = useState([]);
     // Exact edge-ID set from MondrianMap's selection state — used to filter crosstalks precisely.
     const [selectedRelationshipIds, setSelectedRelationshipIds] = useState(new Set());
@@ -414,8 +370,12 @@ function App() {
     const case_study_slug = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
     const layerSuffix = parameters.selectedLayer === null ? '_all' : `_L${parameters.selectedLayer}`;
     const mapDownloadLabel = parameters.selectedLayer === null
-        ? "Download Mondrian Map (All Layers Combined)"
-        : `Download Mondrian Map (Layer ${parameters.selectedLayer})`;
+        ? "Download All Layers Combined"
+        : `Download Layer ${parameters.selectedLayer}`;
+
+    const mapDownloadTooltip = parameters.selectedLayer === null
+        ? "Download MondrianMap for all layers combined as PNG."
+        : `Download MondrianMap for Layer ${parameters.selectedLayer} as PNG.`;
 
     return (
         <div className="h-screen w-screen overflow-hidden bg-gray-50 flex font-sans">
@@ -492,8 +452,8 @@ function App() {
                         <div className="text-gray-500 text-lg pointer-events-auto text-center mx-4 max-w-md">
                             {info ? info : (
                                 inputMode === 'custom'
-                                    ? "Enter your gene sets and click Run Enrichment Analysis to generate the Hierarchical Mondrian Maps."
-                                    : "Select a case study and condition, then click Run Enrichment Analysis to generate the Hierarchical Mondrian Maps."
+                                    ? "Enter your gene sets and click Run Enrichment Analysis to generate the Hierarchical MondrianMaps."
+                                    : "Select a case study and condition, then click Run Enrichment Analysis to generate the Hierarchical MondrianMaps."
                             )}
                         </div>
                     </div>
@@ -602,6 +562,11 @@ function App() {
                                         allEdges={relationships}
                                         metadata={layoutJson?.metadata || {}}
                                         parameters={parameters}
+                                        getSelectionSVG={() => {
+                                            if (!mondrianMapRef.current) return null;
+                                            const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                            return mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
+                                        }}
                                     />
                                 }
                             />
@@ -611,11 +576,8 @@ function App() {
                                 {/* Annotation Toggle */}
                                 <button
                                     onClick={() => setShowAnnotations(prev => !prev)}
-                                    className={`w-full py-3 px-4 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm ${showAnnotations
-                                        ? 'bg-white text-black border-2 border-black hover:bg-gray-50'
-                                        : 'bg-gray-200 text-gray-500 border-2 border-gray-400 hover:bg-gray-100'
-                                        }`}
-                                    title={showAnnotations ? 'Hide annotations from map and exports' : 'Show annotations on map and exports'}
+                                    className={`w-full py-3 px-4 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm bg-white text-black border-2 border-black hover:bg-gray-50`}
+                                    title={showAnnotations ? 'Hide term name annotations from MondrianMap.' : 'Show term name annotations on MondrianMap.'}
                                 >
                                     <Type size={14} />
                                     {showAnnotations ? 'Annotations On' : 'Annotations Off'}
@@ -649,7 +611,7 @@ function App() {
                                             }
                                         }}
                                         className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                        title={mapDownloadLabel}
+                                        title={mapDownloadTooltip}
                                     >
                                         <Download size={14} />
                                         {mapDownloadLabel}
@@ -683,10 +645,10 @@ function App() {
                                             }
                                         }}
                                         className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                        title="Download only the currently selected terms"
+                                        title="Download MondrianMap for only the current selection as PNG."
                                     >
                                         <Download size={14} />
-                                        Download Mondrian Map (Selected)
+                                        Download Selected MondrianMap
                                     </button>
                                 )}
 
@@ -694,10 +656,10 @@ function App() {
                                 <button
                                     onClick={handleDownloadAllLayersZip}
                                     className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                    title="Download all layer maps as SVG + PNG in a ZIP archive"
+                                    title="Download MondrianMaps for all layers in a ZIP archive."
                                 >
                                     <Archive size={14} />
-                                    Download Mondrian Maps (All Layers)
+                                    Download All Layers
                                 </button>
                             </div>
                         </div>

@@ -496,7 +496,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         // Density-adaptive font size base
         const entityCount = allRects.length;
         const fontBase = entityCount > 80 ? 7 : entityCount > 40 ? 8 : 9;
-        const fontMax  = entityCount > 80 ? 10 : entityCount > 40 ? 12 : 14;
+        const fontMax = entityCount > 80 ? 10 : entityCount > 40 ? 12 : 14;
 
         // ── Helpers ──
 
@@ -949,7 +949,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
 
             {contextMenu && (
                 <div
-                    className="fixed bg-white shadow-lg border border-gray-200 rounded py-1 z-50 text-sm w-52 text-black"
+                    className="fixed bg-white shadow-lg border border-gray-200 rounded py-1 z-50 text-sm w-72 text-black"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                     onClick={(e) => e.stopPropagation()}
                     onContextMenu={(e) => e.preventDefault()}

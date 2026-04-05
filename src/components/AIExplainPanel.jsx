@@ -1,5 +1,5 @@
 /**
- * AIHypothesisPanel — slide-out panel for AI-generated biological hypotheses.
+ * AIExplainPanel — slide-out panel for AI-generated biological hypotheses.
  *
  * Only accessible when the user has an active selection on the Mondrian Map.
  * Displays selected GO terms, the crosstalks between them, and the AI output
@@ -19,16 +19,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAIExplain } from '../hooks/useAIExplain';
 import { getLayerSuffix } from '../utils/layerSuffix.js';
 import { CONFIG } from '../config.js';
+import { svgToPngBlob, blobToBase64 } from '../utils/imageExport.js';
 
 // ---------------------------------------------------------------------------
-// Brand colours — single source of truth, matches the rest of the app
+// Brand colours
 // ---------------------------------------------------------------------------
 const BRAND = {
   black: '#1D1D1D',
   red: '#E30022',
   blue: '#0078BF',
   yellow: '#FFD700',
-  // Darker tones for label text on white background
   blueDark: '#005f96',
   redDark: '#b8001a',
   yellowDark: '#8B6914',
@@ -65,7 +65,6 @@ const SECTION_NAMES = [
   'Potential Implications',
 ];
 
-/** Per-section brand styling — border uses full brand colour, label uses readable dark variant */
 const SECTION_META = {
   'Biological Narrative': { borderColor: BRAND.blue, labelColor: BRAND.blueDark },
   'Crosstalk Interpretation': { borderColor: BRAND.yellow, labelColor: BRAND.yellowDark },
@@ -206,52 +205,6 @@ function ErrorDisplay({ message, resetAt }) {
   );
 }
 
-function TermsList({ nodes }) {
-  if (!nodes?.length) return null;
-  return (
-    <div className="space-y-1">
-      {nodes.map((node) => (
-        <div key={node.id} className="flex items-center gap-2 py-1.5 px-2" style={{ background: '#F9FAFB', border: '1px solid #F3F4F6' }}>
-          <span
-            className="w-2.5 h-2.5 shrink-0"
-            style={{ backgroundColor: node.color || '#999', border: '1px solid rgba(0,0,0,0.15)' }}
-          />
-          <span className="text-xs font-medium min-w-0 leading-snug" style={{ color: BRAND.black }} title={`${node.name || node.id} · ${node.id}`}>
-            {node.name || node.id}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CrosstalksList({ edges }) {
-  if (!edges?.length) return null;
-  return (
-    <div className="space-y-1 mt-3">
-      <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#9CA3AF' }}>
-        Crosstalks ({edges.length})
-      </p>
-      {edges.map((edge, i) => (
-        <div key={i} className="flex items-center gap-2 py-1.5 px-2" style={{ background: '#F9FAFB', border: '1px solid #F3F4F6' }}>
-          <Minus className="w-3 h-3 shrink-0" style={{ color: '#9CA3AF' }} />
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] leading-tight truncate" style={{ color: '#374151' }}>
-              <span className="font-medium">{edge.source}</span>
-              <span className="mx-1" style={{ color: '#9CA3AF' }}>↔</span>
-              <span className="font-medium">{edge.target}</span>
-            </p>
-          </div>
-          <span className="text-[10px] font-mono shrink-0" style={{ color: '#6B7280' }}>
-            J={edge.weight?.toFixed(2) ?? '—'}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Shown when the user has used all requests */
 function LimitReachedNotice({ resetAt }) {
   const minutesLeft = resetAt ? Math.max(1, Math.ceil((resetAt - Date.now()) / 60_000)) : null;
   return (
@@ -278,12 +231,13 @@ function LimitReachedNotice({ resetAt }) {
 // Main panel
 // ---------------------------------------------------------------------------
 
-export default function AIHypothesisPanel({
+export default function AIExplainPanel({
   selectedNodes,
   selectedRelationshipIds,
   allEdges,
   metadata,
   parameters,
+  getSelectionSVG,
 }) {
   const relevantEdges = useMemo(
     () => getRelevantEdges(selectedNodes, allEdges, selectedRelationshipIds),
@@ -301,7 +255,6 @@ export default function AIHypothesisPanel({
     clearExplanation,
   } = useAIExplain();
 
-  // "Copied" flash state for the copy button
   const [copied, setCopied] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState('idle');
   const downloadTimerRef = useRef(null);
@@ -316,9 +269,7 @@ export default function AIHypothesisPanel({
 
   useEffect(() => {
     return () => {
-      if (downloadTimerRef.current) {
-        clearTimeout(downloadTimerRef.current);
-      }
+      if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
     };
   }, []);
 
@@ -329,12 +280,72 @@ export default function AIHypothesisPanel({
     setTimeout(() => setCopied(false), 2000);
   }, [explanation]);
 
-  const handleDownloadExplanation = useCallback(() => {
+  const handleDownloadExplanation = useCallback(async () => {
     if (!explanation) return;
+    setDownloadStatus('processing');
+
     const caseName = (metadata?.case_study || 'analysis').replace(/\s+/g, '_');
     const layerSuffix = getLayerSuffix(parameters?.selectedLayer);
     const filename = `ai_hypothesis_${caseName}${layerSuffix}.md`;
-    const blob = new Blob([explanation], { type: 'text/markdown;charset=utf-8;' });
+
+    // 1. Get the Map Image (PNG Base64)
+    let headerImage = '';
+    if (getSelectionSVG) {
+      const svgString = getSelectionSVG();
+      if (svgString) {
+        try {
+          const pngBlob = await svgToPngBlob(svgString);
+          const base64Png = await blobToBase64(pngBlob);
+          headerImage = `![Selected Mondrian Map](${base64Png})\n\n`;
+        } catch (e) {
+          console.error("Failed to generate PNG for download:", e);
+        }
+      }
+    }
+
+    // 2. Prepare Detailed Experiment Metadata (Markdown Tables)
+    const upTermCount = selectedNodes.filter(t => t.direction === 'upregulated').length;
+    const downTermCount = selectedNodes.filter(t => t.direction === 'downregulated').length;
+
+    const termsTable = selectedNodes && selectedNodes.length > 0
+      ? `\n#### Selected GO Terms (${selectedNodes.length})\n| GO ID | Term Name | Direction | Layer | -log10(p) | Adj. p-value | Genes Count | Genes |\n| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n` +
+      selectedNodes.map(n => `| ${n.id} | ${n.name || 'N/A'} | ${n.direction} | ${n.layer ?? 'N/A'} | ${n.significance_score?.toFixed(4) || 'N/A'} | ${n.pValue?.toExponential(4) || 'N/A'} | ${n.gene_count || 0} | ${n.genes?.slice(0, 10).join(', ')}${n.genes?.length > 10 ? '...' : ''} |`).join('\n')
+      : '';
+
+    const crosstalkTable = relevantEdges && relevantEdges.length > 0
+      ? `\n#### Selected Crosstalks (${relevantEdges.length})\n| Source | Target | Jaccard Index |\n| :--- | :--- | :--- |\n` +
+      relevantEdges.map(e => `| ${e.source} | ${e.target} | ${e.weight?.toFixed(4) || 'N/A'} |`).join('\n')
+      : '';
+
+    const metadataSection = `
+---
+### Experiment Information
+- **Case Study:** ${metadata?.case_study || 'N/A'}
+- **Contrast:** ${metadata?.contrast || 'N/A'}
+- **Enrichment Library:** ${metadata?.enrichment_library || 'N/A'}
+- **Generated At:** ${metadata?.generated_at ? new Date(metadata.generated_at).toLocaleString() : new Date().toLocaleString()}
+- **AI Model:** ${modelName}
+
+#### Summary Metrics
+- **Total Selected Terms:** ${selectedNodes.length}
+- **Upregulated Terms:** ${upTermCount}
+- **Downregulated Terms:** ${downTermCount}
+- **Total Selected Crosstalks:** ${relevantEdges.length}
+
+${termsTable}
+${crosstalkTable}
+
+#### Input Gene Sets
+| Set | Gene Count | Genesets |
+| :--- | :--- | :--- |
+| Upregulated | ${metadata?.up_gene_count || 0} | ${metadata?.up_genes?.slice(0, 100).join(', ') || 'None'}${metadata?.up_genes?.length > 100 ? '...' : ''} |
+| Downregulated | ${metadata?.down_gene_count || 0} | ${metadata?.down_genes?.slice(0, 100).join(', ') || 'None'}${metadata?.down_genes?.length > 100 ? '...' : ''} |
+---
+`;
+
+    const fullContent = `# AI Hypothesis\n\n${headerImage}${explanation}\n\n${metadataSection}`;
+
+    const blob = new Blob([fullContent], { type: 'text/markdown;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
@@ -343,17 +354,15 @@ export default function AIHypothesisPanel({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+
     setDownloadStatus('success');
-    if (downloadTimerRef.current) {
-      clearTimeout(downloadTimerRef.current);
-    }
+    if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
     downloadTimerRef.current = setTimeout(() => {
       setDownloadStatus('idle');
       downloadTimerRef.current = null;
     }, 2000);
-  }, [explanation, metadata]);
+  }, [explanation, metadata, modelName, parameters, getSelectionSVG, selectedNodes, relevantEdges]);
 
-  // Clear previous result whenever the selection changes
   useEffect(() => {
     clearExplanation();
     setCopied(false);
@@ -374,7 +383,6 @@ export default function AIHypothesisPanel({
 
   return (
     <div className="w-full flex flex-col font-sans border-2 border-black bg-white">
-      {/* Generate button or limit notice */}
       {!explanation && !loading && (
         <div className="p-5">
           {nodeCount > 0 ? (
@@ -407,7 +415,6 @@ export default function AIHypothesisPanel({
         </div>
       )}
 
-      {/* Loading skeleton */}
       {loading && (
         <div className="p-5 border-t border-gray-100">
           <div className="flex items-center gap-2 mb-2">
@@ -420,18 +427,14 @@ export default function AIHypothesisPanel({
         </div>
       )}
 
-      {/* Error */}
-      {/* Only show the error banner for non-rate-limit errors */}
       {error && remaining > 0 && (
         <div className="p-5">
           <ErrorDisplay message={error} resetAt={resetAt} />
         </div>
       )}
 
-      {/* Result */}
       {explanation && !loading && (
         <div className="p-5 border-t border-gray-100">
-          {/* Result header row */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5" style={{ color: BRAND.black }} />
@@ -439,71 +442,57 @@ export default function AIHypothesisPanel({
                 AI Hypothesis
               </p>
             </div>
-            {/* Copy & download controls */}
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleCopy}
                 className="flex items-center gap-1 text-[10px] transition-colors"
                 style={{ color: copied ? BRAND.blue : '#9CA3AF' }}
-                title="Copy to clipboard"
               >
-                {copied
-                  ? <><Check className="w-3 h-3" /> Copied</>
-                  : <><Copy className="w-3 h-3" /> Copy</>
-                }
-              </button>
-              <button
-                type="button"
-                onClick={handleDownloadExplanation}
-                disabled={!explanation}
-                className="flex items-center gap-1 text-[10px] transition-colors"
-                style={{
-                  color: downloadStatus === 'success' ? BRAND.blue : '#9CA3AF',
-                  cursor: !explanation ? 'not-allowed' : 'pointer',
-                  opacity: !explanation ? 0.4 : 1,
-                }}
-                title="Download hypothesis as Markdown"
-              >
-                {downloadStatus === 'success'
-                  ? <><Check className="w-3 h-3" /> Downloaded</>
-                  : <><Download className="w-3 h-3" /> Download</>
-                }
+                {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
               </button>
             </div>
           </div>
 
           <HypothesisView text={explanation} />
 
-          {/* Regenerate — only if quota remains */}
-          {remaining > 0 && (
-            <button
-              onClick={handleRegenerate}
-              disabled={loading}
-              className="mt-5 w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors"
-              style={{
-                border: `1px solid ${BRAND.black}`,
-                color: BRAND.black,
-                background: 'transparent',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = BRAND.black; e.currentTarget.style.color = '#fff'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = BRAND.black; }}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Regenerate
-            </button>
-          )}
+          <div className="mt-6 flex flex-col gap-2">
+            {remaining > 0 && (
+              <button
+                onClick={handleRegenerate}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors"
+                style={{ border: `1px solid ${BRAND.black}`, color: BRAND.black, background: 'transparent' }}
+                onMouseEnter={e => { e.currentTarget.style.background = BRAND.black; e.currentTarget.style.color = '#fff'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = BRAND.black; }}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Regenerate
+              </button>
+            )}
 
-          {/* Limit notice after result, if quota exhausted */}
+            <button
+              onClick={handleDownloadExplanation}
+              disabled={downloadStatus === 'processing'}
+              className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors"
+              style={{ background: BRAND.black, color: '#FFFFFF' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#333'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = BRAND.black; }}
+            >
+              {downloadStatus === 'processing' ? (
+                <> <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Processing...</>
+              ) : downloadStatus === 'success' ? (
+                <><Check className="w-3.5 h-3.5" /> Downloaded</>
+              ) : (
+                <><Download className="w-3.5 h-3.5" /> Download AI Hypothesis</>
+              )}
+            </button>
+          </div>
+
           {remaining === 0 && <LimitReachedNotice resetAt={resetAt} />}
 
-          {/* Disclaimer */}
-          <div
-            className="mt-4 pt-4"
-            style={{ borderTop: '1px solid #F3F4F6' }}
-          >
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid #F3F4F6' }}>
             <p className="text-[9px] leading-relaxed" style={{ color: '#D1D5DB' }}>
-              Generated by {modelName} from enrichment statistics. Hypotheses are AI-assisted and require experimental validation. Always verify gene symbols and pathway identifiers against primary databases. AI model may make mistakes or hallucinates.
+              Generated by {modelName} from enrichment statistics. Hypotheses are AI-assisted and require experimental validation. Always verify gene symbols and pathway identifiers against primary databases. AI model may make mistakes or hallucinations.
             </p>
           </div>
         </div>

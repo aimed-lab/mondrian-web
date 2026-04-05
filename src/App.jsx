@@ -5,7 +5,7 @@ import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
 import AIExplainPanel from './components/AIExplainPanel';
 import LayerZoomControl from './components/LayerZoomControl';
-import { ChevronLeft, ChevronRight, Menu, Sparkles, Download, Archive, Type } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, Sparkles, Download, Archive, Type, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 import { getLayerSuffix } from './utils/layerSuffix.js';
@@ -37,6 +37,16 @@ function App() {
 
     // --- Parameters ---
     const [parameters, setParameters] = useState({ ...PARAMETER_DEFAULTS });
+
+    // --- ZIP download status (similar to AIExplainPanel) ---
+    const [zipDownloadStatus, setZipDownloadStatus] = useState('idle');
+    const zipDownloadTimerRef = useRef(null);
+
+    useEffect(() => {
+        return () => {
+            if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
+        };
+    }, []);
 
     // No auto-load — start empty, render only after user triggers analysis
 
@@ -303,7 +313,7 @@ function App() {
 
     const handleDownloadAllLayersZip = async () => {
         if (!layoutJson || !mondrianMapRef.current) return;
-        setIsLoading(true); // Show loader while downloading
+        setZipDownloadStatus('archiving');
         try {
             const zip = new JSZip();
             const case_study_slug = (layoutJson.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
@@ -358,11 +368,18 @@ function App() {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            setZipDownloadStatus('success');
+            if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
+            zipDownloadTimerRef.current = setTimeout(() => {
+                setZipDownloadStatus('idle');
+                zipDownloadTimerRef.current = null;
+            }, 2000);
 
         } catch (error) {
             console.error("Failed to generate ZIP:", error);
-        } finally {
-            setIsLoading(false); // Hide loader when done
+            setZipDownloadStatus('idle');
         }
     };
 
@@ -655,11 +672,17 @@ function App() {
                                 {/* Bulk ZIP download */}
                                 <button
                                     onClick={handleDownloadAllLayersZip}
+                                    disabled={zipDownloadStatus === 'archiving'}
                                     className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
                                     title="Download MondrianMaps for all layers in a ZIP archive."
                                 >
-                                    <Archive size={14} />
-                                    Download All Layers
+                                    {zipDownloadStatus === 'archiving' ? (
+                                        <> <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Archiving...</>
+                                    ) : zipDownloadStatus === 'success' ? (
+                                        <><Check size={14} /> Downloaded</>
+                                    ) : (
+                                        <><Archive size={14} /> Download All Layers</>
+                                    )}
                                 </button>
                             </div>
                         </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
 import { downloadEnrichmentJSON } from '../utils/downloadEnrichmentResults.js';
 
@@ -6,7 +6,6 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const [selection, setSelection] = useState({ entities: new Set(), relationships: new Set() });
-    const [layoutEntities, setLayoutEntities] = useState([]);
     const [contextMenu, setContextMenu] = useState(null);
 
     const isRealData = dataSource === 'real';
@@ -81,9 +80,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         }));
     }, [getBlockDims, blockSpacing]);
 
-    useEffect(() => {
-        setLayoutEntities(resolveLayout(entities));
-    }, [entities, resolveLayout]);
+    const layoutEntities = useMemo(() => resolveLayout(entities), [entities, resolveLayout]);
 
     // --- Mondrian Grid Line Generation ---
     const generateMondrianLines = useCallback((nodes, edges, containerWidth, containerHeight) => {
@@ -944,7 +941,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
     }), [handleDownload, getSVGContent, getEntityContext, getEdgeContext, relationships]);
 
     return (
-        <div ref={containerRef} className="w-full h-screen overflow-hidden bg-gray-100 relative" onClick={() => contextMenu && setContextMenu(null)} onContextMenu={(e) => { if (contextMenu) { e.preventDefault(); setContextMenu(null); } }}>
+        <div ref={containerRef} className="w-full h-screen overflow-hidden bg-gray-100 relative" style={{ willChange: 'transform' }} onClick={() => contextMenu && setContextMenu(null)} onContextMenu={(e) => { if (contextMenu) { e.preventDefault(); setContextMenu(null); } }}>
             <svg id="mondrian-map-svg" ref={svgRef} className="w-full h-full block cursor-grab active:cursor-grabbing" onClick={handleBackgroundClick} />
 
             {contextMenu && (

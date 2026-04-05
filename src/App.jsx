@@ -42,6 +42,50 @@ function App() {
     const [zipDownloadStatus, setZipDownloadStatus] = useState('idle');
     const zipDownloadTimerRef = useRef(null);
 
+    // --- Zoom Animation State ---
+    const [prevLayerForAnim, setPrevLayerForAnim] = useState(parameters.selectedLayer);
+    const [zoomDirection, setZoomDirection] = useState(0);
+
+    // Synchronous render-time sync to avoid 1-frame animation lag
+    if (parameters.selectedLayer !== prevLayerForAnim) {
+        const isStatic = parameters.selectedLayer === null || prevLayerForAnim === null;
+        const newDir = isStatic ? 0 : (parameters.selectedLayer < prevLayerForAnim ? -1 : 1);
+        setZoomDirection(newDir);
+        setPrevLayerForAnim(parameters.selectedLayer);
+    }
+
+    const zoomVariants = {
+        initial: (direction) => {
+            if (direction === 0) return { scale: 1, opacity: 0, filter: 'none' };
+            return {
+                scale: direction < 0 ? 0.7 : 1.4, // Zooming IN starts smaller; OUT starts larger
+                opacity: 0,
+                filter: 'blur(8px)',
+            };
+        },
+        animate: (direction) => ({
+            scale: 1,
+            opacity: 1,
+            filter: 'none',
+            transition: {
+                duration: direction === 0 ? 0.2 : 0.6, // Static is faster
+                ease: direction === 0 ? "linear" : [0.4, 0, 0.2, 1],
+            }
+        }),
+        exit: (direction) => {
+            if (direction === 0) return { scale: 1, opacity: 0, filter: 'none', transition: { duration: 0.2 } };
+            return {
+                scale: direction < 0 ? 1.4 : 0.7, // Zooming IN exits larger; OUT exits smaller
+                opacity: 0,
+                filter: 'blur(8px)',
+                transition: {
+                    duration: 0.6,
+                    ease: [0.4, 0, 0.2, 1],
+                }
+            };
+        }
+    };
+
     useEffect(() => {
         return () => {
             if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
@@ -504,19 +548,34 @@ function App() {
                     )}
                 </AnimatePresence>
 
-                <MondrianMap
-                    ref={mondrianMapRef}
-                    entities={rescaledEntities}
-                    relationships={relationships}
-                    width={effectiveCanvasSize}
-                    height={effectiveCanvasSize}
-                    parameters={parameters}
-                    isLoading={isLoading}
-                    onSelectionChange={handleSelectionChange}
-                    onLayerZoom={handleLayerZoom}
-                    metadata={layoutJson?.metadata || {}}
-                    showAnnotations={showAnnotations}
-                />
+                <div className="absolute inset-0 overflow-hidden">
+                    <AnimatePresence mode="popLayout" custom={zoomDirection} initial={false}>
+                        <motion.div
+                            key={parameters.selectedLayer}
+                            custom={zoomDirection}
+                            variants={zoomVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            className="w-full h-full"
+                            style={{ willChange: 'transform, opacity' }}
+                        >
+                            <MondrianMap
+                                ref={mondrianMapRef}
+                                entities={rescaledEntities}
+                                relationships={relationships}
+                                width={effectiveCanvasSize}
+                                height={effectiveCanvasSize}
+                                parameters={parameters}
+                                isLoading={isLoading}
+                                onSelectionChange={handleSelectionChange}
+                                onLayerZoom={handleLayerZoom}
+                                metadata={layoutJson?.metadata || {}}
+                                showAnnotations={showAnnotations}
+                            />
+                        </motion.div>
+                    </AnimatePresence>
+                </div>
 
                 {/* ── Bottom-right Interaction Stack ── */}
                 <div className="absolute bottom-6 right-6 z-10 flex flex-col items-end gap-3 pointer-events-none">

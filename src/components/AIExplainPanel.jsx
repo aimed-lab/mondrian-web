@@ -409,7 +409,7 @@ ${crosstalkTable}
           ) : (
             <div className="text-center py-4 bg-gray-50 border border-gray-100">
               <p className="text-sm font-medium" style={{ color: '#9CA3AF' }}>Ready to generate an AI hypothesis?</p>
-              <p className="text-xs mt-1" style={{ color: '#D1D5DB' }}>Select GO terms or crosstalks from the Mondrian Map or <br /> Enrichment Results to get started.</p>
+              <p className="text-xs mt-1" style={{ color: '#D1D5DB' }}>Select GO terms or crosstalks from the Mondrian Map.</p>
             </div>
           )}
         </div>

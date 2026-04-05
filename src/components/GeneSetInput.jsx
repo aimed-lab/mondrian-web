@@ -34,9 +34,14 @@ const tabInactive = 'px-4 py-2 text-sm font-medium border-b-2 border-transparent
 
 // ── Library Selector (shared between both modes) ─────────────────────────
 
-function LibrarySelector({ libraryIndex, selectedLibrary, onChange, disabled }) {
+function LibrarySelector({ libraryIndex, selectedLibrary, onChange, onInteraction, disabled }) {
     const groupedLibs = libraryIndex ? groupLibraries(libraryIndex) : null;
     const selectedMeta = libraryIndex?.find(l => l.id === selectedLibrary);
+
+    const handleChange = (val) => {
+        onChange(val);
+        if (onInteraction) onInteraction();
+    };
 
     return (
         <div>
@@ -44,7 +49,7 @@ function LibrarySelector({ libraryIndex, selectedLibrary, onChange, disabled }) 
             <select
                 className={selectCls}
                 value={selectedLibrary}
-                onChange={e => onChange(e.target.value)}
+                onChange={e => handleChange(e.target.value)}
                 disabled={disabled || !libraryIndex}
             >
                 {!libraryIndex ? (
@@ -73,7 +78,7 @@ function LibrarySelector({ libraryIndex, selectedLibrary, onChange, disabled }) 
 
 // ── Case Study Panel ─────────────────────────────────────────────────────
 
-function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunAnalysis, isLoading }) {
+function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunAnalysis, onInteraction, isLoading }) {
     const [dbIndex, setDbIndex] = useState(null);
     const [dbMeta, setDbMeta] = useState(null);      // selected database metadata (drug list)
     const [selectedDb, setSelectedDb] = useState('');
@@ -190,7 +195,8 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
         setDrugSearch(drugName);
         setDropdownOpen(false);
         loadDrugGenes(drugName);
-    }, [loadDrugGenes]);
+        if (onInteraction) onInteraction();
+    }, [loadDrugGenes, onInteraction]);
 
     const handleSearchChange = useCallback((e) => {
         const val = e.target.value;
@@ -201,7 +207,8 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
             setSelectedDrug('');
             setDrugGenes(null);
         }
-    }, [selectedDrug]);
+        if (onInteraction) onInteraction();
+    }, [selectedDrug, onInteraction]);
 
     const handleSearchFocus = useCallback(() => {
         if (dbMeta) setDropdownOpen(true);
@@ -247,7 +254,10 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
                 <select
                     className={selectCls}
                     value={selectedDb}
-                    onChange={e => setSelectedDb(e.target.value)}
+                    onChange={e => {
+                        setSelectedDb(e.target.value);
+                        if (onInteraction) onInteraction();
+                    }}
                     disabled={isLoading || !dbIndex}
                 >
                     {!dbIndex ? (
@@ -344,6 +354,7 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
                 libraryIndex={libraryIndex}
                 selectedLibrary={selectedLibrary}
                 onChange={onLibraryChange}
+                onInteraction={onInteraction}
                 disabled={isLoading}
             />
 
@@ -363,7 +374,7 @@ function CaseStudyPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunA
 
 // ── Custom Input Panel ───────────────────────────────────────────────────
 
-function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunAnalysis, isLoading }) {
+function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRunAnalysis, onInteraction, isLoading }) {
     const [upText, setUpText] = useState('');
     const [downText, setDownText] = useState('');
     const [caseName, setCaseName] = useState('');
@@ -390,6 +401,18 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleRun();
     };
 
+    const handleTextChange = (type, val) => {
+        if (type === 'up') setUpText(val);
+        else setDownText(val);
+        if (onInteraction) onInteraction();
+    };
+
+    const handleMetaChange = (type, val) => {
+        if (type === 'case') setCaseName(val);
+        else setContrast(val);
+        if (onInteraction) onInteraction();
+    };
+
     return (
         <div className="flex flex-col gap-4">
             {/* Upregulated genes */}
@@ -405,7 +428,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                     rows={4}
                     placeholder={"TP53, BRCA1, EGFR\nMYC KRAS CDK4\nPTEN MDM2"}
                     value={upText}
-                    onChange={e => setUpText(e.target.value)}
+                    onChange={e => handleTextChange('up', e.target.value)}
                     onKeyDown={handleKeyDown}
                     disabled={isLoading}
                 />
@@ -424,7 +447,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                     rows={4}
                     placeholder={"RB1, CDKN2A, TP53BP1\nAPC SMAD4"}
                     value={downText}
-                    onChange={e => setDownText(e.target.value)}
+                    onChange={e => handleTextChange('down', e.target.value)}
                     onKeyDown={handleKeyDown}
                     disabled={isLoading}
                 />
@@ -435,6 +458,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                     onClick={() => {
                         setUpText("ATP6V0B, BANF1, BSG, BST2, BZW1, C14orf2, C19orf43, CALM1, CALM3, CALR, CAP1, CCND3, CCT3");
                         setDownText("CCT6A, CCT7, CCT8, CD53, CD63, CFL1, CKB, CKS1B, CLIC1, CMTM6, CNN2");
+                        if (onInteraction) onInteraction();
                     }}
                     className="text-[10px] text-gray-500 hover:text-black font-bold underline tracking-wider transition-colors"
                     title="Load example differentially expressed genes for testing"
@@ -448,6 +472,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                 libraryIndex={libraryIndex}
                 selectedLibrary={selectedLibrary}
                 onChange={onLibraryChange}
+                onInteraction={onInteraction}
                 disabled={isLoading}
             />
 
@@ -463,11 +488,11 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
                 <div className="flex flex-col gap-3 pl-3 border-l-2 border-gray-200">
                     <div>
                         <label className={labelCls}>Case Study Name</label>
-                        <input type="text" className={inputCls} placeholder="e.g. LINCS_Afatinib" value={caseName} onChange={e => setCaseName(e.target.value)} disabled={isLoading} />
+                        <input type="text" className={inputCls} placeholder="e.g. LINCS_Afatinib" value={caseName} onChange={e => handleMetaChange('case', e.target.value)} disabled={isLoading} />
                     </div>
                     <div>
                         <label className={labelCls}>Contrast</label>
-                        <input type="text" className={inputCls} placeholder="e.g. Drug vs Control" value={contrast} onChange={e => setContrast(e.target.value)} disabled={isLoading} />
+                        <input type="text" className={inputCls} placeholder="e.g. Drug vs Control" value={contrast} onChange={e => handleMetaChange('contrast', e.target.value)} disabled={isLoading} />
                     </div>
                 </div>
             )}
@@ -496,7 +521,7 @@ function CustomInputPanel({ libraryIndex, selectedLibrary, onLibraryChange, onRu
 
 // ── Main Component ───────────────────────────────────────────────────────
 
-const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
+const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange, onInteraction }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [mode, setMode] = useState('custom'); // 'custom' | 'case_study'
 
@@ -511,6 +536,11 @@ const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
             if (index) setLibraryIndex(index);
         });
     }, []);
+
+    const handleModeChange = (newMode) => {
+        setMode(newMode);
+        if (onInteraction) onInteraction();
+    };
 
     return (
         <div className="bg-white p-5 shadow-lg border-2 border-black w-full rounded-none">
@@ -529,13 +559,13 @@ const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
                     <div className="flex border-b border-gray-200 mb-5 -mx-5 px-5">
                         <button
                             className={mode === 'custom' ? tabActive : tabInactive}
-                            onClick={() => setMode('custom')}
+                            onClick={() => handleModeChange('custom')}
                         >
                             Custom Input
                         </button>
                         <button
                             className={mode === 'case_study' ? tabActive : tabInactive}
-                            onClick={() => setMode('case_study')}
+                            onClick={() => handleModeChange('case_study')}
                         >
                             Case Studies
                         </button>
@@ -547,6 +577,7 @@ const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
                             selectedLibrary={selectedLibrary}
                             onLibraryChange={setSelectedLibrary}
                             onRunAnalysis={onRunAnalysis}
+                            onInteraction={onInteraction}
                             isLoading={isLoading}
                         />
                     ) : (
@@ -555,6 +586,7 @@ const GeneSetInput = ({ onRunAnalysis, isLoading, onModeChange }) => {
                             selectedLibrary={selectedLibrary}
                             onLibraryChange={setSelectedLibrary}
                             onRunAnalysis={onRunAnalysis}
+                            onInteraction={onInteraction}
                             isLoading={isLoading}
                         />
                     )}

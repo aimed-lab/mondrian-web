@@ -100,19 +100,6 @@ function App() {
         };
     }, []);
 
-    const prevLayerRef = useRef(parameters.selectedLayer);
-    useEffect(() => {
-        const current = parameters.selectedLayer;
-        const prev = prevLayerRef.current;
-
-        if (current === null && prev !== null) {
-            setShowAnnotations(false);
-        } else if (current !== null && prev === null) {
-            setShowAnnotations(true);
-        }
-        prevLayerRef.current = current;
-    }, [parameters.selectedLayer]);
-
     // No auto-load — start empty, render only after user triggers analysis
 
     /**
@@ -145,6 +132,11 @@ function App() {
         setIsLoading(true);
         setError(null);
         setInfo(null);
+        
+        // Enforce 0.05 p-value default for new gene set analysis runs
+        const runPValueCutoff = 0.05;
+        setParameters(prev => ({ ...prev, pValueCutoff: runPValueCutoff }));
+        
         const libraryId = library || 'GO_Biological_Process_2023';
 
         try {
@@ -158,7 +150,7 @@ function App() {
                     libraryId,
                     caseName: case_study,
                     contrast,
-                    cutoff: parameters.pValueCutoff,
+                    cutoff: runPValueCutoff,
                     jaccardThreshold: parameters.jaccardThreshold,
                 });
                 if (result.metadata?.empty) {
@@ -179,6 +171,8 @@ function App() {
                 body: JSON.stringify({
                     up_genes, down_genes, case_study, contrast,
                     library: libraryId,
+                    cutoff: runPValueCutoff,
+                    jaccard_threshold: parameters.jaccardThreshold,
                 }),
             });
             const data = await response.json();
@@ -488,6 +482,7 @@ function App() {
                                 onRunAnalysis={handleRunAnalysis}
                                 isLoading={isLoading}
                                 onModeChange={setInputMode}
+                                onInteraction={() => setParameters(prev => ({ ...prev, pValueCutoff: 0.05 }))}
                             />
 
                             {/* Error message */}
@@ -765,7 +760,7 @@ function App() {
                                                 title="Download MondrianMap for only the current selection as PNG."
                                             >
                                                 <Download size={14} />
-                                                Download Selected MondrianMap
+                                                Download Selection
                                             </button>
                                         )}
 

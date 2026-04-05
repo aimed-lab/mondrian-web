@@ -16,7 +16,7 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
  * @param {string}   opts.model
  * @param {string}   opts.systemPrompt
  * @param {string}   opts.userPrompt
- * @param {number}  [opts.temperature=0.2]
+ * @param {number}  [opts.temperature=0.1]
  * @param {number}  [opts.maxTokens=1500]
  * @returns {Promise<{ explanation: string, model: string }>}
  * @throws {OpenAIError}
@@ -26,7 +26,7 @@ export async function callOpenAI({
   model,
   systemPrompt,
   userPrompt,
-  temperature = 0.2,
+  temperature = 0.1,
   maxTokens = 1500,
 }) {
   let response;
@@ -42,7 +42,7 @@ export async function callOpenAI({
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userPrompt   },
+          { role: 'user', content: userPrompt },
         ],
         temperature,
         // max_completion_tokens replaces the deprecated max_tokens for

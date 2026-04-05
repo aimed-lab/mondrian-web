@@ -5,7 +5,7 @@ import GeneSetInput from './components/GeneSetInput';
 import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
 import AIExplainPanel from './components/AIExplainPanel';
 import LayerZoomControl from './components/LayerZoomControl';
-import { ChevronLeft, ChevronRight, Menu, Sparkles, Download, Archive, Type, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Menu, Sparkles, Download, Archive, Type, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
 import { getLayerSuffix } from './utils/layerSuffix.js';
@@ -20,6 +20,9 @@ function App() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [info, setInfo] = useState(null);
+    const [hierarchy, setHierarchy] = useState(null);
+    const [carryParentNodes, setCarryParentNodes] = useState(true);
+    const [showAnimations, setShowAnimations] = useState(true);
 
     // --- UI State ---
     const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -68,18 +71,18 @@ function App() {
             opacity: 1,
             filter: 'none',
             transition: {
-                duration: direction === 0 ? 0.2 : 0.6, // Static is faster
+                duration: !showAnimations ? 0 : (direction === 0 ? 0.2 : 0.6), // Static or disabled is faster
                 ease: direction === 0 ? "linear" : [0.4, 0, 0.2, 1],
             }
         }),
         exit: (direction) => {
-            if (direction === 0) return { scale: 1, opacity: 0, filter: 'none', transition: { duration: 0.2 } };
+            if (direction === 0) return { scale: 1, opacity: 0, filter: 'none', transition: { duration: !showAnimations ? 0 : 0.2 } };
             return {
                 scale: direction < 0 ? 1.4 : 0.7, // Zooming IN exits larger; OUT exits smaller
                 opacity: 0,
                 filter: 'blur(8px)',
                 transition: {
-                    duration: 0.6,
+                    duration: !showAnimations ? 0 : 0.6,
                     ease: [0.4, 0, 0.2, 1],
                 }
             };
@@ -87,6 +90,11 @@ function App() {
     };
 
     useEffect(() => {
+        fetch('/data/go_hierarchy.json')
+            .then(res => res.json())
+            .then(data => setHierarchy(data))
+            .catch(err => console.error('Failed to load GO hierarchy:', err));
+
         return () => {
             if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
         };
@@ -221,8 +229,8 @@ function App() {
     // --- Derived: entities/relationships for visualization ---
     const { entities, relationships } = useMemo(() => {
         if (!layoutJson) return { entities: [], relationships: [] };
-        return mapRealDataToEntities(layoutJson, parameters);
-    }, [layoutJson, parameters]);
+        return mapRealDataToEntities(layoutJson, { ...parameters, carryParentNodes }, hierarchy);
+    }, [layoutJson, parameters, hierarchy, carryParentNodes]);
 
     // --- Dynamic Canvas Size: auto-expand to resolve overlaps & border-touching ---
     // The overlap check now runs a D3 force simulation (matching MondrianMap's
@@ -258,7 +266,7 @@ function App() {
                 maxBlocks: countNodesForLayer(layoutJson, layer, parameters.pValueCutoff),
                 maxEdges: countEdgesForLayer(layoutJson, layer, parameters.pValueCutoff, parameters.jaccardThreshold),
             };
-            const { entities: layerEntities } = mapRealDataToEntities(layoutJson, params);
+            const { entities: layerEntities } = mapRealDataToEntities(layoutJson, { ...params, carryParentNodes }, hierarchy);
             const required = computeRequiredCanvasSize(layerEntities, BASE_CANVAS_SIZE, 200, 3000, blockSpacing);
             if (required > maxLayerSize) maxLayerSize = required;
         }
@@ -272,7 +280,7 @@ function App() {
             maxBlocks: countNodesForLayer(layoutJson, null, parameters.pValueCutoff),
             maxEdges: countEdgesForLayer(layoutJson, null, parameters.pValueCutoff, parameters.jaccardThreshold),
         };
-        const { entities: allEntities } = mapRealDataToEntities(layoutJson, allParams);
+        const { entities: allEntities } = mapRealDataToEntities(layoutJson, { ...allParams, carryParentNodes }, hierarchy);
         const allRequired = computeRequiredCanvasSize(allEntities, BASE_CANVAS_SIZE, 200, 3000, blockSpacing);
         console.log(`[Canvas Auto-Size] All Layers requires ${allRequired}×${allRequired}`);
         setAllLayersCanvasSize(allRequired);
@@ -375,7 +383,7 @@ function App() {
 
             // 1. Generate Combined (All Layers) map — uses its own canvas size
             const allCanvasSize = getCanvasSizeForLayer(null);
-            const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(null));
+            const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, { ...getParamsForLayer(null), carryParentNodes }, hierarchy);
             const allEntitiesScaled = rescaleEntitiesForCanvas(allEntities, allCanvasSize);
             const allSvg = mondrianMapRef.current.getSVG('full', allEntitiesScaled, allRelationships, allCanvasSize, allCanvasSize);
             zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
@@ -389,7 +397,7 @@ function App() {
             // 2. Generate each individual layer map — uses synced max canvas size
             const layerCanvasSize = getCanvasSizeForLayer(1); // any non-null layer returns the synced max
             for (const layer of layersToDownload) {
-                const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, getParamsForLayer(layer));
+                const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, { ...getParamsForLayer(layer), carryParentNodes }, hierarchy);
                 if (layerEntities.length > 0) {
                     const layerEntitiesScaled = rescaleEntitiesForCanvas(layerEntities, layerCanvasSize);
                     const layerSvg = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, layerRelationships, layerCanvasSize, layerCanvasSize);
@@ -572,6 +580,7 @@ function App() {
                                 onLayerZoom={handleLayerZoom}
                                 metadata={layoutJson?.metadata || {}}
                                 showAnnotations={showAnnotations}
+                                showAnimations={showAnimations}
                             />
                         </motion.div>
                     </AnimatePresence>
@@ -619,6 +628,33 @@ function App() {
 
                     <div className="w-full h-full overflow-hidden">
                         <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
+                            {/* NEW: Collapsible Options at the very top */}
+                            <CollapsibleSection title="Options" defaultOpen={true}>
+                                <div className="flex flex-col gap-4 px-1">
+                                    <ToggleSwitch
+                                        id="toggle-annotations"
+                                        label="Show Annotations"
+                                        checked={showAnnotations}
+                                        onChange={setShowAnnotations}
+                                        icon={<Type size={14} />}
+                                    />
+                                    <ToggleSwitch
+                                        id="toggle-carry"
+                                        label="Carry Parent Nodes"
+                                        checked={carryParentNodes}
+                                        onChange={setCarryParentNodes}
+                                        icon={<Archive size={14} />}
+                                    />
+                                    <ToggleSwitch
+                                        id="toggle-animations"
+                                        label="Enable Animations"
+                                        checked={showAnimations}
+                                        onChange={setShowAnimations}
+                                        icon={<Sparkles size={14} />}
+                                    />
+                                </div>
+                            </CollapsibleSection>
+
                             <DataTable
                                 layoutJson={layoutJson}
                                 filteredNodes={entities}
@@ -647,102 +683,101 @@ function App() {
                                 }
                             />
 
-                            {/* ── Map Download Controls ── */}
-                            <div className="flex flex-col gap-2 mt-8">
-                                {/* Annotation Toggle */}
-                                <button
-                                    onClick={() => setShowAnnotations(prev => !prev)}
-                                    className={`w-full py-3 px-4 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm bg-white text-black border-2 border-black hover:bg-gray-50`}
-                                    title={showAnnotations ? 'Hide term name annotations from MondrianMap.' : 'Show term name annotations on MondrianMap.'}
-                                >
-                                    <Type size={14} />
-                                    {showAnnotations ? 'Annotations On' : 'Annotations Off'}
-                                </button>
+                            {/* Downloads — grouped below everything */}
+                            <div className="flex flex-col gap-8 mt-12 pb-20">
+                                <div>
+                                    <h2 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-2">
+                                        <div className="h-[1px] bg-gray-200 flex-1" />
+                                        Downloads
+                                        <div className="h-[1px] bg-gray-200 flex-1" />
+                                    </h2>
+                                    <div className="flex flex-col gap-2 px-1">
+                                        {/* Layer / Full map download (hidden during selection) */}
+                                        {!isSelectionActive && (
+                                            <button
+                                                onClick={async () => {
+                                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                                    const filename = `mondrian_map_full_${caseName}${layerSuffix}.png`;
 
-                                {/* Layer / Full map download (hidden during selection) */}
-                                {!isSelectionActive && (
-                                    <button
-                                        onClick={async () => {
-                                            const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                            const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                            const filename = `mondrian_map_full_${caseName}${layerSuffix}.png`;
+                                                    if (!mondrianMapRef.current) return;
+                                                    const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                                    const layerEntitiesScaled = rescaleEntitiesForCanvas(entities, canvasSize);
+                                                    const svgString = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, relationships, canvasSize, canvasSize);
 
-                                            if (!mondrianMapRef.current) return;
-                                            const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                            const layerEntitiesScaled = rescaleEntitiesForCanvas(entities, canvasSize);
-                                            const svgString = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, relationships, canvasSize, canvasSize);
+                                                    try {
+                                                        const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
+                                                        const url = URL.createObjectURL(pngBlob);
+                                                        const link = document.createElement("a");
+                                                        link.href = url;
+                                                        link.download = filename;
+                                                        document.body.appendChild(link);
+                                                        link.click();
+                                                        document.body.removeChild(link);
+                                                        URL.revokeObjectURL(url);
+                                                    } catch (e) {
+                                                        console.error("Failed to generate PNG map:", e);
+                                                    }
+                                                }}
+                                                className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                                title={mapDownloadTooltip}
+                                            >
+                                                <Download size={14} />
+                                                {mapDownloadLabel}
+                                            </button>
+                                        )}
 
-                                            try {
-                                                const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
-                                                const url = URL.createObjectURL(pngBlob);
-                                                const link = document.createElement("a");
-                                                link.href = url;
-                                                link.download = filename;
-                                                document.body.appendChild(link);
-                                                link.click();
-                                                document.body.removeChild(link);
-                                                URL.revokeObjectURL(url);
-                                            } catch (e) {
-                                                console.error("Failed to generate PNG map:", e);
-                                            }
-                                        }}
-                                        className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                        title={mapDownloadTooltip}
-                                    >
-                                        <Download size={14} />
-                                        {mapDownloadLabel}
-                                    </button>
-                                )}
+                                        {/* Selection-specific download */}
+                                        {isSelectionActive && (
+                                            <button
+                                                onClick={async () => {
+                                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
+                                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
+                                                    const filename = `mondrian_map_selection_${caseName}${layerSuffix}.png`;
 
-                                {/* Selection-specific download */}
-                                {isSelectionActive && (
-                                    <button
-                                        onClick={async () => {
-                                            const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                            const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                            const filename = `mondrian_map_selection_${caseName}${layerSuffix}.png`;
+                                                    if (!mondrianMapRef.current) return;
+                                                    const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
+                                                    const svgString = mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
 
-                                            if (!mondrianMapRef.current) return;
-                                            const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                            const svgString = mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
+                                                    try {
+                                                        const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
+                                                        const url = URL.createObjectURL(pngBlob);
+                                                        const link = document.createElement("a");
+                                                        link.href = url;
+                                                        link.download = filename;
+                                                        document.body.appendChild(link);
+                                                        link.click();
+                                                        document.body.removeChild(link);
+                                                        URL.revokeObjectURL(url);
+                                                    } catch (e) {
+                                                        console.error("Failed to generate Selection PNG map:", e);
+                                                    }
+                                                }}
+                                                className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                                title="Download MondrianMap for only the current selection as PNG."
+                                            >
+                                                <Download size={14} />
+                                                Download Selected MondrianMap
+                                            </button>
+                                        )}
 
-                                            try {
-                                                const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
-                                                const url = URL.createObjectURL(pngBlob);
-                                                const link = document.createElement("a");
-                                                link.href = url;
-                                                link.download = filename;
-                                                document.body.appendChild(link);
-                                                link.click();
-                                                document.body.removeChild(link);
-                                                URL.revokeObjectURL(url);
-                                            } catch (e) {
-                                                console.error("Failed to generate Selection PNG map:", e);
-                                            }
-                                        }}
-                                        className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                        title="Download MondrianMap for only the current selection as PNG."
-                                    >
-                                        <Download size={14} />
-                                        Download Selected MondrianMap
-                                    </button>
-                                )}
-
-                                {/* Bulk ZIP download */}
-                                <button
-                                    onClick={handleDownloadAllLayersZip}
-                                    disabled={zipDownloadStatus === 'archiving'}
-                                    className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                    title="Download MondrianMaps for all layers in a ZIP archive."
-                                >
-                                    {zipDownloadStatus === 'archiving' ? (
-                                        <> <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Archiving...</>
-                                    ) : zipDownloadStatus === 'success' ? (
-                                        <><Check size={14} /> Downloaded</>
-                                    ) : (
-                                        <><Archive size={14} /> Download All Layers</>
-                                    )}
-                                </button>
+                                        {/* Bulk ZIP download */}
+                                        <button
+                                            onClick={handleDownloadAllLayersZip}
+                                            disabled={zipDownloadStatus === 'archiving'}
+                                            className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
+                                            title="Download MondrianMaps for all layers in a ZIP archive."
+                                        >
+                                            {zipDownloadStatus === 'archiving' ? (
+                                                <> <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Archiving...</>
+                                            ) : zipDownloadStatus === 'success' ? (
+                                                <><Check size={14} /> Downloaded</>
+                                            ) : (
+                                                <><Archive size={14} /> Download All Layers</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -790,27 +825,67 @@ function countEdgesForLayer(layoutJson, layer, pValueCutoff, jaccardThreshold) {
 /**
  * Map pipeline JSON to the entity/relationship format used by MondrianMap,
  * applying all active parameter filters and limits.
+ * 
+ * Also includes "ghost" parent nodes from the previous layer if they have no 
+ * descendants in the current layer's enrichment results.
  */
-function mapRealDataToEntities(layoutJson, parameters) {
+function mapRealDataToEntities(layoutJson, parameters, hierarchy = null) {
     if (!layoutJson?.nodes) return { entities: [], relationships: [] };
 
-    const { selectedLayer, pValueCutoff, jaccardThreshold, maxBlocks, maxEdges, blockSizeMultiplier } = parameters;
+    const { selectedLayer, pValueCutoff, jaccardThreshold, maxBlocks, maxEdges, blockSizeMultiplier, carryParentNodes = true } = parameters;
 
-    // 1. Filter by layer (data-driven — no hardcoded layer limit)
-    let nodes = layoutJson.nodes.filter(n =>
-        selectedLayer === null || n.layer === selectedLayer
+    // 1. Filter real nodes for current layer
+    let currentLayerNodes = layoutJson.nodes.filter(n =>
+        (selectedLayer === null || n.layer === selectedLayer) && n.adjusted_p_value <= pValueCutoff
     );
 
-    // 2. Filter by adj. p-value threshold
-    nodes = nodes.filter(n => n.adjusted_p_value <= pValueCutoff);
+    // Sort by significance and limit
+    currentLayerNodes.sort((a, b) => b.significance_score - a.significance_score);
+    currentLayerNodes = currentLayerNodes.slice(0, maxBlocks);
+    
+    const currentLayerNodeIds = new Set(currentLayerNodes.map(n => n.go_id));
 
-    // 3. Sort by significance (highest first) and limit to # GO Terms
-    nodes.sort((a, b) => b.significance_score - a.significance_score);
-    nodes = nodes.slice(0, maxBlocks);
+    // 2. Identify Ghost Parent Nodes
+    // If we are in a specific layer (not "All Layers"), look for parents from layer + 1
+    let ghostNodes = [];
+    if (carryParentNodes && selectedLayer !== null && hierarchy) {
+        const parentLayer = selectedLayer + 1;
+        const parentCandidates = layoutJson.nodes.filter(n => 
+            n.layer === parentLayer && n.adjusted_p_value <= pValueCutoff
+        );
 
-    const nodeIds = new Set(nodes.map(n => n.go_id));
+        parentCandidates.forEach(parent => {
+            // Check if this parent has ANY descendant in currentLayerNodes
+            const hasDescendant = checkHasDescendantInList(parent.go_id, currentLayerNodeIds, hierarchy);
+            
+            if (!hasDescendant) {
+                // If it doesn't have an enriched descendant, it's a candidate for a ghost
+                // Ghost nodes should not collide with real nodes or other ghosts
+                const ghost = { ...parent, isGhost: true };
+                
+                // collision check (raw grid coords)
+                const collides = checkCollision(ghost, currentLayerNodes, 30); // 30 is a safe threshold
+                if (!collides) {
+                    ghostNodes.push(ghost);
+                }
+            }
+        });
+    }
 
-    const entities = nodes.map(node => ({
+    const allNodes = [...currentLayerNodes, ...ghostNodes];
+    const allNodeIds = new Set(allNodes.map(n => n.go_id));
+
+    const getBlockColor = (node) => {
+        if (node.isGhost) {
+            if (node.direction === 'upregulated') return '#EFB7C1'; // Faint Red
+            if (node.direction === 'downregulated') return '#B6D5E8'; // Faint Blue
+            if (node.direction === 'shared') return '#FDF2C2'; // Faint Yellow
+            return '#CCCCCC'; // Faint Gray
+        }
+        return node.color;
+    };
+
+    const entities = allNodes.map(node => ({
         id: `GO:${node.go_id}`,
         go_id: node.go_id,
         name: node.name,
@@ -822,31 +897,144 @@ function mapRealDataToEntities(layoutJson, parameters) {
         pValue: node.adjusted_p_value,
         significance_score: node.significance_score,
         direction: node.direction,
-        color: node.color,
+        color: getBlockColor(node),
         gene_count: node.gene_count,
         genes: node.genes || [],
         layer: node.layer,
         level: node.level,
+        isGhost: node.isGhost || false,
     }));
 
-    // 4. Filter edges: both endpoints in view AND above Jaccard threshold
-    let edges = layoutJson.edges.filter(e =>
-        nodeIds.has(e.source) && nodeIds.has(e.target) && e.weight >= jaccardThreshold
-    );
+    // 3. Filter edges
+    // Normalize source/target IDs (remove 'GO:' prefix if present in layoutJson)
+    const normalizeId = (id) => id.startsWith('GO:') ? id.substring(3) : id;
 
-    // 5. Sort by weight and limit to # Crosstalks
-    edges.sort((a, b) => b.weight - a.weight);
-    edges = edges.slice(0, maxEdges);
+    let filteredOriginalEdges = layoutJson.edges.filter(e => {
+        const s = normalizeId(e.source);
+        const t = normalizeId(e.target);
+        return allNodeIds.has(s) && allNodeIds.has(t) && e.weight >= jaccardThreshold;
+    });
 
-    const relationships = edges.map(e => ({
-        source: `GO:${e.source}`,
-        target: `GO:${e.target}`,
-        weight: e.weight,
-        type: e.type || 'gene_overlap',
-    }));
+    // 5. Sort by weight and limit
+    // To ensure GO-GO crosstalks are not dropped by high-weight Parent edges, 
+    // we use a larger limit if Parent carrying is active and prioritize GO-GO.
+    const effectiveMaxEdges = carryParentNodes ? maxEdges + 150 : maxEdges;
+    
+    // Identify which nodes are ghosts
+    const ghostIdSet = new Set(ghostNodes.map(n => `GO:${n.go_id}`));
+
+    const allRelationships = filteredOriginalEdges.map(e => {
+        const sourceId = `GO:${normalizeId(e.source)}`;
+        const targetId = `GO:${normalizeId(e.target)}`;
+        return {
+            source: sourceId,
+            target: targetId,
+            weight: e.weight,
+            type: e.type || 'gene_overlap',
+            isGhostEdge: ghostIdSet.has(sourceId) || ghostIdSet.has(targetId),
+        };
+    });
+
+    // Prioritize GO-GO (non-ghost) edges, then by weight
+    allRelationships.sort((a, b) => {
+        if (a.isGhostEdge !== b.isGhostEdge) {
+            return a.isGhostEdge ? 1 : -1;
+        }
+        return b.weight - a.weight;
+    });
+
+    const relationships = allRelationships.slice(0, effectiveMaxEdges);
 
     return { entities, relationships };
 }
 
+/**
+ * Recursively check if a GO term has any descendants in a given list of enriched IDs.
+ */
+function checkHasDescendantInList(parentId, enrichedIds, hierarchy, visited = new Set()) {
+    if (visited.has(parentId)) return false;
+    visited.add(parentId);
+
+    const children = hierarchy[parentId] || [];
+    for (const childId of children) {
+        if (enrichedIds.has(childId)) return true;
+        if (checkHasDescendantInList(childId, enrichedIds, hierarchy, visited)) return true;
+    }
+    return false;
+}
+
+/**
+ * Basic spatial collision check for blocks.
+ */
+function checkCollision(candidate, existingNodes, threshold = 20) {
+    const cx = candidate.grid_coords.x;
+    const cy = candidate.grid_coords.y;
+    const cw = candidate.grid_coords.w;
+    const ch = candidate.grid_coords.h;
+
+    for (const node of existingNodes) {
+        const nx = node.grid_coords.x;
+        const ny = node.grid_coords.y;
+        const nw = node.grid_coords.w;
+        const nh = node.grid_coords.h;
+
+        // Check if rectangles overlap (with small padding threshold)
+        const overlapX = Math.abs(cx - nx) < (cw / 2 + nw / 2 + threshold);
+        const overlapY = Math.abs(cy - ny) < (ch / 2 + nh / 2 + threshold);
+        
+        if (overlapX && overlapY) return true;
+    }
+    return false;
+}
+
+/**
+ * Premium iOS-style Toggle Switch
+ */
+function ToggleSwitch({ id, label, checked, onChange, icon }) {
+    return (
+        <div className="flex items-center justify-between py-2 group">
+            <div className="flex items-center gap-3 text-gray-700">
+                {icon && <span className="text-gray-400 group-hover:text-black transition-colors">{icon}</span>}
+                <label htmlFor={id} className="text-sm font-medium cursor-pointer select-none">
+                    {label}
+                </label>
+            </div>
+            <div 
+                className={`relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${checked ? 'bg-black' : 'bg-gray-200'}`}
+                onClick={() => onChange(!checked)}
+                role="switch"
+                aria-checked={checked}
+            >
+                <span
+                    className={`${checked ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out`}
+                />
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Premium collapsible container
+ */
+function CollapsibleSection({ title, children, defaultOpen = true }) {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    const panelCls = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none mb-6';
+    const headerCls = 'flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5';
+    const titleCls = 'text-base font-bold text-black tracking-wide';
+
+    return (
+        <div className={panelCls}>
+            <div className={headerCls} onClick={() => setIsOpen(o => !o)}>
+                <h2 className={titleCls}>{title}</h2>
+                {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </div>
+            {isOpen && (
+                <div className="mt-5 pt-5 border-t border-gray-100 animate-in fade-in slide-in-from-top-1 duration-200">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default App;

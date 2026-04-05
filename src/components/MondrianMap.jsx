@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo, forwardRef, u
 import * as d3 from 'd3';
 import { downloadEnrichmentJSON } from '../utils/downloadEnrichmentResults.js';
 
-const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, metadata = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null, showAnnotations = true }, ref) {
+const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, width = 1000, height = 1000, parameters = {}, metadata = {}, dataSource = 'real', isLoading = false, onSelectionChange = null, onLayerZoom = null, showAnnotations = true, showAnimations = true }, ref) {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const [selection, setSelection] = useState({ entities: new Set(), relationships: new Set() });
@@ -371,13 +371,17 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
                 significance_score: entity.significance_score || 0,
                 direction: entity.direction || '',
                 layer: entity.layer,
+                isGhost: entity.isGhost || false,
             };
         });
 
-        const getOpacity = (type, id, unselectedAlpha = 0.1) => {
-            if (!selectionState || (selectionState.entities.size === 0 && selectionState.relationships.size === 0)) return 1;
+        const getOpacity = (type, id, unselectedAlpha = 0.1, isGhost = false) => {
+            if (!selectionState || (selectionState.entities.size === 0 && selectionState.relationships.size === 0)) {
+                return 1; // Ghosts handle their own fill transparency now
+            }
             const isSelected = type === 'entity' ? selectionState.entities.has(id) : selectionState.relationships.has(id);
-            return isSelected ? 1 : unselectedAlpha;
+            if (isSelected) return 1;
+            return isGhost ? unselectedAlpha * 0.5 : unselectedAlpha;
         };
 
         // Mondrian lines
@@ -385,7 +389,7 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const subdivisionGroup = group.append("g").attr("class", "subdivision");
         subdivisionGroup.selectAll("line").data(mondrianLines).enter().append("line")
             .attr("x1", d => d.x1).attr("y1", d => d.y1).attr("x2", d => d.x2).attr("y2", d => d.y2)
-            .attr("stroke", "#D3D3D3").attr("stroke-width", 3).attr("stroke-linecap", "square")
+            .attr("stroke", "#CCCCCC").attr("stroke-width", 3).attr("stroke-linecap", "square")
             .attr("opacity", () => (selectionState && (selectionState.entities.size > 0 || selectionState.relationships.size > 0)) ? 0 : 1)
             .style("transition", "opacity 0.2s ease");
 
@@ -408,7 +412,9 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
 
             const path = group.append("path")
                 .attr("d", `M ${best.s.x} ${best.s.y} L ${best.t.x} ${best.s.y} L ${best.t.x} ${best.t.y}`)
-                .attr("fill", "none").attr("stroke", "#1D1D1D").attr("stroke-width", 3)
+                .attr("fill", "none")
+                .attr("stroke", rel.isGhostEdge ? "#666666" : "#000000")
+                .attr("stroke-width", 3)
                 .attr("opacity", getOpacity('relationship', relId, 0))   // unselected crosstalks fully hidden
                 .style("cursor", isInteractive ? "pointer" : "default").style("transition", "opacity 0.2s ease");
 
@@ -427,9 +433,9 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
         const entityGroups = {};
         Object.values(entityRects).forEach(rect => {
             const g = group.append("g")
-                .attr("opacity", getOpacity('entity', rect.id))
+                .attr("opacity", getOpacity('entity', rect.id, 0.1, rect.isGhost))
                 .style("cursor", isInteractive ? "pointer" : "default")
-                .style("transition", "opacity 0.2s ease");
+                .style("transition", showAnimations ? "opacity 0.2s ease" : "none");
             if (isInteractive) {
                 g.on("click", (e) => handleEntityClick(e, rect.id));
                 g.on("contextmenu", (e) => {
@@ -447,13 +453,14 @@ const MondrianMap = forwardRef(function MondrianMap({ entities, relationships, w
                 .attr("x", rect.x).attr("y", rect.y)
                 .attr("width", rect.width).attr("height", rect.height)
                 .attr("fill", rect.color)
-                .attr("stroke", "#1D1D1D").attr("stroke-width", 3);
+                .attr("stroke", rect.isGhost ? "#666666" : "#000000")
+                .attr("stroke-width", 3);
 
             // Tooltip
             const tooltipParts = [];
             const termName = rect.name ? rect.name : (rect.id.split('-')[1] || rect.id);
             const termId = rect.id;
-            const title = `${termName} (${termId})`;
+            const title = rect.isGhost ? `[Lingering Parent] ${termName} (${termId})` : `${termName} (${termId})`;
             tooltipParts.push(title);
             tooltipParts.push('—'.repeat(Math.floor(title.length * 0.5)));
 

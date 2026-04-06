@@ -1,129 +1,134 @@
-# MondrianMap: Navigating gene set hierarchies with multi-resolution enrichment maps
+<!-- <p align="center">
+  <img src="figures/none.png" alt="MondrianMap" width="280"/>
+</p> -->
 
-**A visualization tool that allows hierarchical visualization of enriched gene sets and their cross-talks for biological case studies**
+<h1 align="center">MondrianMap</h1>
 
-<p align="left">
-  <a href="https://mondrianmap.smartdrugdiscovery.org/" target="_blank" rel="noopener noreferrer">WebApp</a> •
-  <a href="https://github.com/aimed-lab/mondrian-web" target="_blank" rel="noopener noreferrer">GitHub</a>
+<p align="center">
+  <strong>Navigating gene set hierarchies with multi-resolution maps</strong>
 </p>
 
-The Common Fund Data Ecosystem (CFDE) integrates NIH Common Fund resources by harmonizing evidence at the gene-set/signature level, enabling cross-study functional comparisons. Yet enrichment analyses typically yield long, redundant term lists that obscure hierarchical relationships among gene sets and pathways. We developed MondrianMap, a free web server that converts enrichment outputs into interactive, Mondrian-style rectangular maps and supports multi-resolution navigation across discretized semantic layers, from specific terms to broad umbrella processes. MondrianMap groups semantically related gene sets using embedding-based similarity to reduce redundancy, and encodes effect direction and magnitude alongside significance in a single view with zoomable drill-down. In representative transcriptomic and multi-omics case studies, MondrianMap reveals coherent functional modules and stable higher-level processes while exposing finer-grained substructures that are difficult to recover from conventional dot and bar plots. MondrianMap makes CFDE gene set hierarchies tractable for exploratory analysis, accelerating hypothesis generation and reuse of integrated functional knowledge.
+<p align="center">
+  <a href="https://mondrianmap.smartdrugdiscovery.org/">🌐 Web Application</a> &nbsp;·&nbsp;
+  <a href="#citation">📄 Cite</a> &nbsp;·&nbsp;
+  <a href="#getting-started">⚙️ Getting Started</a>
+</p>
 
 ---
 
-## Scientific & Methodological Pipeline
+## Overview
 
-MondrianMap implements a multi-stage pipeline designed to preserve both the statistical significance and semantic relationships of biological pathways.
+Gene set enrichment analysis translates differential expression into biological meaning, yet every conventional tool collapses the Gene Ontology's hierarchical structure into flat ranked lists. **MondrianMap** restores that hierarchy. It organizes enrichment results into **13 semantically principled layers** derived from the [GOALS](https://doi.org/10.1101/2025.04.22.650095) framework and renders them as color-encoded rectangular maps where:
 
-```mermaid
-graph TD
-    A[Gene List CSV] --> B[Enrichment Analysis - gseapy]
-    B --> C[Significant GO Terms]
-    C --> D[GoBERT Semantic Embeddings]
-    D --> E[UMAP Dimensionality Reduction]
-    E --> F[2D Spatial Coordinates]
-    F --> G[Grid-Based Canvas Mapping]
-    G --> H[Interactive Mondrian Visualization]
-    H --> I[AI-Powered Interpretation]
-    
-    style G fill:#f9f,stroke:#333,stroke-width:2px
-    style I fill:#bbf,stroke:#333,stroke-width:2px
-```
+- **Block area** encodes statistical significance (−log₁₀ adjusted p-value)
+- **Color** encodes effect direction (red = upregulated, blue = downregulated)
+- **Spatial proximity** preserves semantic relatedness (GoBERT + UMAP)
+- **Layer navigation** enables multi-resolution traversal from molecular mechanism to system-level theme
 
-### 1. Enrichment Analysis
-Identifies significant Gene Ontology (GO) terms from user-uploaded gene lists using **gseapy** with Benjamini-Hochberg FDR correction.
-
-### 2. Semantic Embedding (GoBERT)
-Uses **GoBERT**, a specialized BERT-based transformer model, to generate 768-dimensional embeddings for each GO term. This captures the deep functional meaning of biological processes.
-
-### 3. Spatial Optimization (UMAP)
-High-dimensional embeddings are projected onto a 2D plane using **UMAP** (Uniform Manifold Approximation and Projection) with a cosine similarity metric. This ensures that biologically related pathways naturally cluster together spatially.
-
-### 4. Mondrian Aesthetic Rendering
-*   **Grid Alignment**: Strict 10px grid on a 1000x1000 canvas.
-*   **Significance-Based Sizing**: Block area proportional to statistical significance ($-log_{10}(p)$).
-*   **Regulation-Based Coloring**: 🟥 Red (Up), 🟦 Blue (Down), 🟨 Yellow (Shared).
+MondrianMap integrates three NIH Common Fund Data Ecosystem (CFDE) databases — **LINCS L1000**, **GTEx Aging Signatures**, and **MoTrPAC** — as pre-indexed, searchable repositories, alongside support for custom gene list upload.
 
 ---
 
-## Key Features
+## Pipeline
 
-*   **AI Hypothesis Engine**: LLM-integrated interpretation to hypothesize mechanistic links between enriched clusters.
-*   **Multi-Resolution Navigation**: Supports 13 layers of GO hierarchy (via the **GOALS** framework), allowing zoomable drill-down from broad processes to specific terms.
-*   **Dynamic Filtering**: Real-time control over block size, spacing, significance, and Jaccard crosstalk thresholds.
-*   **Interactive Crosstalk**: Visualizes functional overlaps between pathways using Jaccard Similarity.
+<p align="center">
+  <img src="figures/pipeline.png" alt="MondrianMap Pipeline" width="100%"/>
+</p>
 
----
-
-## Setup & Installation
-
-### Web Application
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/aimed-lab/mondrian-web.git
-    ```
-2.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
-3.  **Start development server**:
-    ```bash
-    npm run dev
-    ```
-
-### Data Processing Pipeline
-1.  **Install Python requirements**:
-    ```bash
-    cd python
-    pip install -r requirements.txt
-    ```
+<p align="center"><em>Figure 1 — CFDE datasets or user-uploaded gene lists undergo enrichment analysis (Fisher's exact test, FDR ≤ 0.05). Enriched GO-BP terms are assigned to 13 GOALS semantic layers and embedded via GoBERT + UMAP for spatial layout. The resulting Mondrian maps encode significance (area), direction (color), and semantic proximity (position) within a navigable, layer-resolved interface.</em></p>
 
 ---
 
-## Data Management
+## Web Application
 
-### Ingesting New Datasets
-To ingest a new perturbation GMT file into the Mondrian Map database system, use the `ingest_database.py` script.
+<p align="center">
+  <img src="figures/webapp.png" alt="MondrianMap Interface" width="100%"/>
+</p>
 
-**Command:**
+<p align="center"><em>Figure 2 — Interactive interface. <strong>(a)</strong> Gene set input (custom or CFDE case studies). <strong>(b)</strong> Layer-resolved Mondrian map canvas with zoomable drill-down. <strong>(c)</strong> Enrichment results panel with term statistics. <strong>(d–e)</strong> Dynamic filters for gene count, significance, and Jaccard crosstalk thresholds. <strong>(f–g)</strong> AI hypothesis generation module producing layer-grounded biological narratives.</em></p>
+
+---
+
+## Case Study: LINCS CRISPR Perturbations
+
+<p align="center">
+  <img src="figures/cs1.png" alt="LINCS Case Study" width="85%"/>
+</p>
+
+<p align="center"><em>Figure 3 — Layer-resolved Mondrian maps discriminate cancer driver mechanisms. <strong>(a–b)</strong> TP53 and KRAS knockouts at GOALS Layer 8: the same immune recruitment processes (neutrophil chemotaxis, granulocyte chemotaxis) appear as blue blocks in TP53 and red blocks in KRAS — a directional inversion visible at a glance. <strong>(c–e)</strong> Multi-resolution navigation within TP53 across Layers 4, 6, and 13 reveals three progressively broader biological narratives from a single enrichment. <strong>(f–g)</strong> Two independent TP53 replicates at Layer 7 confirm visual reproducibility.</em></p>
+
+Two additional case studies — GTEx tissue-aging signatures and MoTrPAC exercise temporal dynamics — are presented in the accompanying manuscript.
+
+---
+
+## Getting Started
+
+### Web Application (Recommended)
+
+No installation required. Visit **[mondrianmap.smartdrugdiscovery.org](https://mondrianmap.smartdrugdiscovery.org/)** to analyze CFDE databases or upload custom gene lists.
+
+### Local Development
+
+**Frontend**
 ```bash
-python python/ingest_database.py <path_to_gmt> --id <db_id> --name <display_name> [options]
+git clone https://github.com/aimed-lab/mondrian-web.git
+cd mondrian-web
+npm install
+npm run dev
 ```
 
-**Example:**
+**Python Pipeline**
 ```bash
-python python/ingest_database.py data/LINCS_L1000.gmt \
-    --id LINCS \
-    --name "LINCS L1000" \
-    --label-type "Drug Perturbation" \
-    --description "LINCS L1000 Chemical Perturbation Signatures"
+cd python
+pip install -r requirements.txt
+python process_pipeline.py --help
 ```
 
-**Options:**
-- `--id`: Short database identifier (e.g., LINCS).
-- `--name`: Display name shown in the webapp dropdown.
-- `--label-type`: Label for the dropdown categories (e.g., "Compound").
-- `--shard-size`: Target shard size in MB (default: 5) for efficient loading.
-- `--single-dir`: If set, treat all entries as unidirectional (no Up/Down pairing).
+### Ingesting Custom Databases
+
+```bash
+python python/ingest_database.py <path_to_gmt> \
+    --id <db_id> \
+    --name <display_name> \
+    --label-type <category_label> \
+    --description <description>
+```
+
+| Flag | Description |
+|---|---|
+| `--id` | Short database identifier (e.g., `LINCS`) |
+| `--name` | Display name in the web application dropdown |
+| `--label-type` | Category label (e.g., `Drug Perturbation`) |
+| `--shard-size` | Target shard size in MB (default: 5) |
+| `--single-dir` | Treat all entries as unidirectional (no Up/Down pairing) |
 
 ---
 
-## Authors & Contact
-
-**Authors**: Fuad Al Abir, Zongliang Yue, Ehsan Saghapour, Md Delower Hossain, Zhandos Sembay, Sixue Zhang, Jake Y. Chen.
-
-**Correspondence**: <a href="mailto:jakechen@uab.edu">jakechen@uab.edu</a>
-
----
-
-## Citations
+## Citation
 
 If you use MondrianMap in your research, please cite:
 
-**Mondrian Abstraction and Language Model Embeddings for Differential Pathway Analysis**
-> Al Abir, F., & Chen, J. Y. (2024). 2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM).
-> <a href="https://doi.org/10.1101/2024.04.11.589093" target="_blank" rel="noopener noreferrer">DOI: 10.1101/2024.04.11.589093</a>
+> **MondrianMap: Hierarchical Enrichment Visualization for Multi-Resolution Biological Discovery**
+> Al Abir, F., Yue, Z., Saghapour, E., Hossain, M.D., Sembay, Z., Zhang, S., & Chen, J.Y. (2026). *(Under Review)*
 
-**GOALS: Gene Ontology Analysis with Layered Shells for Enhanced Functional Insight and Visualization**
-> Yue, Z., Welner, R. S., Willey, C. D., Amin, R., Li, Q., Chen, H., and Chen, J. Y. (2025).
-> <a href="https://doi.org/10.1101/2025.04.22.650095" target="_blank" rel="noopener noreferrer">DOI: 10.1101/2025.04.22.650095</a>
+> **Mondrian Abstraction and Language Model Embeddings for Differential Pathway Analysis**
+> Al Abir, F. & Chen, J.Y. (2024). *IEEE International Conference on Bioinformatics and Biomedicine (BIBM)*.
+> [DOI: 10.1101/2024.04.11.589093](https://doi.org/10.1101/2024.04.11.589093)
+
+> **GOALS: Gene Ontology Analysis with Layered Shells for Enhanced Functional Insight and Visualization**
+> Yue, Z., Welner, R.S., Willey, C.D., Amin, R., Li, Q., Chen, H., & Chen, J.Y. (2025).
+> [DOI: 10.1101/2025.04.22.650095](https://doi.org/10.1101/2025.04.22.650095)
+
+---
+
+## Authors
+
+Fuad Al Abir, Zongliang Yue, Ehsan Saghapour, Md Delower Hossain, Zhandos Sembay, Sixue Zhang, Jake Y. Chen
+
+Correspondence: [jakechen@uab.edu](mailto:jakechen@uab.edu)
+
+---
+
+## License
+
+MondrianMap is open-source. Source code is available at [github.com/aimed-lab/mondrian-web](https://github.com/aimed-lab/mondrian-web).

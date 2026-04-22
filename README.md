@@ -104,6 +104,38 @@ python python/ingest_database.py <path_to_gmt> \
 
 ---
 
+## Development status
+
+The repo currently has three active branches reflecting an in-progress UI redesign. See [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the full changelog and next-step punch list.
+
+| Branch | Purpose | App entry | Data source |
+|---|---|---|---|
+| `main` | Production — deployed to [mondrianmap.smartdrugdiscovery.org](https://mondrianmap.smartdrugdiscovery.org/). Tailwind sidebar UI. | `src/App.jsx` + `src/components/*` | Real offline enrichment pipeline |
+| `design-preview` | Raw Claude Design handoff preserved as a static reference. View at `/design/Mondrian Map.html` under `npm run dev`. | `public/design/Mondrian Map.html` (UMD React + in-browser Babel) | Mock data (`MM_TERMS`, `MM_DATASETS`) |
+| `design-port` | ESM React port of the handoff, wired to the real enrichment pipeline. The in-progress next-generation UI. | Rewritten `src/App.jsx` + new `src/design/*` | Real offline enrichment pipeline |
+
+**To preview any branch locally:**
+```bash
+git checkout <branch>   # main | design-preview | design-port
+npm install             # macOS ARM: use `npm install --force` to skip the pinned linux-x64 rollup binary
+npm run dev             # http://localhost:5173
+```
+
+### For contributors picking up the redesign
+
+Start on `design-port` and read, in order: [`src/App.jsx`](src/App.jsx) → [`src/design/MondrianCanvas.jsx`](src/design/MondrianCanvas.jsx) → [`src/design/Drawers.jsx`](src/design/Drawers.jsx). The data bridge from the real pipeline's `layoutJson` into the design's term/edge shape lives in `bridgeLayoutToDesign()` at the bottom of `App.jsx`.
+
+Follow-ups tracked in [`RELEASE_NOTES.md`](RELEASE_NOTES.md) — roughly:
+1. Rewire the drug-perturbation **Case Studies** picker (logic lives in `src/components/GeneSetInput.jsx` on `main`).
+2. Rewire **AI Insights** narratives through `src/api/handlers/aiExplain.js` → `/.netlify/functions/ai-explain`.
+3. Wire the **Upload** tab to an actual dataset mapper (stub `ImportModal` exists).
+4. Restore **ZIP / SVG / PNG export** from the old right-panel download flow.
+5. Wire the **Similar** tab to rummageGEO / rummaGENE indexes.
+
+Existing components under `src/components/` (`MondrianMap.jsx`, `AIExplainPanel.jsx`, `DataTable.jsx`, `GeneSetInput.jsx`, `ParameterControls.jsx`, `LayerZoomControl.jsx`, etc.) are preserved intact on `design-port` — the new App just doesn't import them yet. Use them as the source of truth when re-wiring a feature.
+
+---
+
 ## Citation
 
 If you use MondrianMap in your research, please cite:

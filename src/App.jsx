@@ -1,149 +1,60 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import MondrianMap from './components/MondrianMap';
-import DataTable from './components/DataTable';
-import GeneSetInput from './components/GeneSetInput';
-import ParameterControls, { PARAMETER_DEFAULTS } from './components/ParameterControls';
-import AIExplainPanel from './components/AIExplainPanel';
-import LayerZoomControl from './components/LayerZoomControl';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Menu, Sparkles, Download, Archive, Type, Check } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import './design/theme.css';
+
+import { MondrianPlate, MapSurface } from './design/MondrianCanvas.jsx';
+import { SearchPill, TopRightCluster, MapControls, MapLegend } from './design/MapUI.jsx';
+import { LeftDrawer, DetailDrawer } from './design/Drawers.jsx';
+import { ImportModal, LoginModal } from './design/Modals.jsx';
+import { PARAMETER_DEFAULTS } from './components/ParameterControls.jsx';
 import { runOfflinePipeline, isOfflineAvailable } from './utils/offlinePipeline.js';
-import { getLayerSuffix } from './utils/layerSuffix.js';
-import JSZip from 'jszip';
-import InfoPanel from './components/InfoPanel';
-import { svgToPngBlob } from './utils/imageExport.js';
-import { computeRequiredCanvasSize } from './utils/canvasAutoSize.js';
+
+const PLATE_W = 1200;
+const PLATE_H = 1200;
 
 function App() {
-    // --- Data State ---
+    // ── Data ──────────────────────────────────────────────────────────
     const [layoutJson, setLayoutJson] = useState(null);
+    const [hierarchy, setHierarchy] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [info, setInfo] = useState(null);
-    const [hierarchy, setHierarchy] = useState(null);
-    const [carryParentNodes, setCarryParentNodes] = useState(false);
-    const [showAnimations, setShowAnimations] = useState(false);
 
-    // --- UI State ---
-    const [isPanelOpen, setIsPanelOpen] = useState(true);
-    const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
-    const [inputMode, setInputMode] = useState('custom');
-    const [showAnnotations, setShowAnnotations] = useState(true);
+    // ── Parameters (shared with existing pipeline semantics) ──────────
+    const [parameters, setParameters] = useState({
+        ...PARAMETER_DEFAULTS,
+        minGenes: 2,
+    });
 
-    // --- AI Explain: nodes currently selected on the MondrianMap ---
-    const [selectedNodes, setSelectedNodes] = useState([]);
-    // Exact edge-ID set from MondrianMap's selection state — used to filter crosstalks precisely.
-    const [selectedRelationshipIds, setSelectedRelationshipIds] = useState(new Set());
+    // ── Design UI state ───────────────────────────────────────────────
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [showImport, setShowImport] = useState(false);
+    const [showLogin, setShowLogin] = useState(false);
+    const [selectedId, setSelectedId] = useState(null);
+    const [showEdges, setShowEdges] = useState(true);
+    const [showLabels, setShowLabels] = useState(true);
+    const [embedding] = useState('gobert_umap');
 
-    // --- Ref to MondrianMap — used to call downloadMap imperatively ---
-    const mondrianMapRef = useRef(null);
+    // Pan/zoom ref + live view.k for label reveal
+    const viewRef = useRef(null);
+    const [zoom, setZoom] = useState(1);
 
-    // --- Parameters ---
-    const [parameters, setParameters] = useState({ ...PARAMETER_DEFAULTS });
-
-    // --- ZIP download status (similar to AIExplainPanel) ---
-    const [zipDownloadStatus, setZipDownloadStatus] = useState('idle');
-    const zipDownloadTimerRef = useRef(null);
-
-    // --- Zoom Animation State ---
-    const [prevLayerForAnim, setPrevLayerForAnim] = useState(parameters.selectedLayer);
-    const [zoomDirection, setZoomDirection] = useState(0);
-
-    // Synchronous render-time sync to avoid 1-frame animation lag
-    if (parameters.selectedLayer !== prevLayerForAnim) {
-        const isStatic = parameters.selectedLayer === null || prevLayerForAnim === null;
-        const newDir = isStatic ? 0 : (parameters.selectedLayer < prevLayerForAnim ? -1 : 1);
-        setZoomDirection(newDir);
-        setPrevLayerForAnim(parameters.selectedLayer);
-    }
-
-    const zoomVariants = {
-        initial: (direction) => {
-            if (direction === 0) return { scale: 1, opacity: 0, filter: 'none' };
-            return {
-                scale: direction < 0 ? 0.7 : 1.4, // Zooming IN starts smaller; OUT starts larger
-                opacity: 0,
-                filter: 'blur(8px)',
-            };
-        },
-        animate: (direction) => ({
-            scale: 1,
-            opacity: 1,
-            filter: 'none',
-            transition: {
-                duration: !showAnimations ? 0 : (direction === 0 ? 0.2 : 0.6), // Static or disabled is faster
-                ease: direction === 0 ? "linear" : [0.4, 0, 0.2, 1],
-            }
-        }),
-        exit: (direction) => {
-            if (direction === 0) return { scale: 1, opacity: 0, filter: 'none', transition: { duration: !showAnimations ? 0 : 0.2 } };
-            return {
-                scale: direction < 0 ? 1.4 : 0.7, // Zooming IN exits larger; OUT exits smaller
-                opacity: 0,
-                filter: 'blur(8px)',
-                transition: {
-                    duration: !showAnimations ? 0 : 0.6,
-                    ease: [0.4, 0, 0.2, 1],
-                }
-            };
-        }
-    };
-
+    // ── Load GO hierarchy (for ghost parent carrying, preserved from old App) ──
     useEffect(() => {
         fetch('/data/go_hierarchy.json')
-            .then(res => res.json())
-            .then(data => setHierarchy(data))
+            .then(r => r.json()).then(setHierarchy)
             .catch(err => console.error('Failed to load GO hierarchy:', err));
-
-        return () => {
-            if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
-        };
     }, []);
 
-    // No auto-load — start empty, render only after user triggers analysis
-
-    /**
-     * Apply a fresh layout JSON, resetting parameters to sensible defaults.
-     * Selects the smallest available layer; maxBlocks/maxEdges set to max for that layer.
-     */
-    const applyNewLayoutJson = (json, baseParams = parameters) => {
-        setLayoutJson(json);
-        setError(null);
-        setInfo(null);
-
-        const layers = getAvailableLayers(json);
-        // Start at the highest (root-like) layer for the Google Maps zoom experience
-        const defaultLayer = layers.length > 0 ? layers[layers.length - 1] : null;
-
-        // Compute per-layer counts at default p-value cutoff
-        const nc = countNodesForLayer(json, defaultLayer, baseParams.pValueCutoff);
-        const ec = countEdgesForLayer(json, defaultLayer, baseParams.pValueCutoff, baseParams.jaccardThreshold);
-
-        setParameters({
-            ...baseParams,
-            selectedLayer: defaultLayer,
-            maxBlocks: nc,
-            maxEdges: ec,
-        });
-    };
-
-    // --- Run enrichment analysis: offline-first, backend fallback ---
+    // ── Run analysis (ported verbatim from prior App.jsx — offline-first, backend fallback) ──
     const handleRunAnalysis = useCallback(async ({ up_genes, down_genes, case_study, contrast, library }) => {
         setIsLoading(true);
         setError(null);
         setInfo(null);
-        
-        // Enforce 0.05 p-value default for new gene set analysis runs
         const runPValueCutoff = 0.05;
-        setParameters(prev => ({ ...prev, pValueCutoff: runPValueCutoff }));
-        
+        setParameters(p => ({ ...p, pValueCutoff: runPValueCutoff }));
         const libraryId = library || 'GO_Biological_Process_2023';
-
         try {
-            // Try offline pipeline first (works on Netlify, no backend needed)
-            const offlineOk = await isOfflineAvailable();
-            if (offlineOk) {
-                console.log('[App] Using offline pipeline...');
+            if (await isOfflineAvailable()) {
                 const result = await runOfflinePipeline({
                     upGenes: up_genes,
                     downGenes: down_genes,
@@ -154,17 +65,13 @@ function App() {
                     jaccardThreshold: parameters.jaccardThreshold,
                 });
                 if (result.metadata?.empty) {
-                    // No significant terms — clear canvas, show soft info message
                     setLayoutJson(null);
                     setInfo('No significant GO terms found. Try a different library or lower the p-value cutoff.');
                 } else {
-                    applyNewLayoutJson(result);
+                    applyLayout(result);
                 }
                 return;
             }
-
-            // Fallback: Flask backend (local dev)
-            console.log('[App] Offline not available, trying backend...');
             const response = await fetch('/api/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -177,623 +84,246 @@ function App() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || `Server error: ${response.status}`);
-            applyNewLayoutJson(data);
+            applyLayout(data);
         } catch (err) {
-            setError(err.message);
+            setError(err.message || String(err));
         } finally {
             setIsLoading(false);
         }
-    }, [parameters.pValueCutoff, parameters.jaccardThreshold]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [parameters.jaccardThreshold]);
 
-    const handleParametersChange = useCallback((newParams) => {
-        setParameters(newParams);
-    }, []);
-
-    // --- AI Explain: receive selection updates from MondrianMap ---
-    const handleSelectionChange = useCallback((selectedEntities, rawSelection) => {
-        setSelectedNodes(selectedEntities);
-        // Propagate the exact relationship-ID set so AIHypothesisPanel can filter
-        // crosstalks to only those explicitly part of the selection.
-        setSelectedRelationshipIds(rawSelection?.relationships ?? new Set());
-    }, []);
-
-    // --- Derived: available layers ---
-    const availableLayers = useMemo(() => getAvailableLayers(layoutJson), [layoutJson]);
-
-    // --- Derived: per-layer node/edge counts (for layer-adaptive defaults) ---
-    const layerNodeCounts = useMemo(() => {
-        if (!layoutJson) return {};
-        const result = {};
-        const { pValueCutoff } = parameters;
-        availableLayers.forEach(layer => {
-            result[layer] = countNodesForLayer(layoutJson, layer, pValueCutoff);
-        });
-        result[null] = countNodesForLayer(layoutJson, null, pValueCutoff);
-        return result;
-    }, [layoutJson, availableLayers, parameters.pValueCutoff]);
-
-    const layerEdgeCounts = useMemo(() => {
-        if (!layoutJson) return {};
-        const result = {};
-        const { pValueCutoff, jaccardThreshold } = parameters;
-        availableLayers.forEach(layer => {
-            result[layer] = countEdgesForLayer(layoutJson, layer, pValueCutoff, jaccardThreshold);
-        });
-        result[null] = countEdgesForLayer(layoutJson, null, pValueCutoff, jaccardThreshold);
-        return result;
-    }, [layoutJson, availableLayers, parameters.pValueCutoff, parameters.jaccardThreshold]);
-
-    // --- Derived: current counts (for slider maxes) ---
-    const totalNodeCount = useMemo(
-        () => layerNodeCounts[parameters.selectedLayer] ?? 0,
-        [layerNodeCounts, parameters.selectedLayer]
-    );
-    const totalEdgeCount = useMemo(
-        () => layerEdgeCounts[parameters.selectedLayer] ?? 0,
-        [layerEdgeCounts, parameters.selectedLayer]
-    );
-
-    // --- Derived: entities/relationships for visualization ---
-    const { entities, relationships } = useMemo(() => {
-        if (!layoutJson) return { entities: [], relationships: [] };
-        return mapRealDataToEntities(layoutJson, { ...parameters, carryParentNodes }, hierarchy);
-    }, [layoutJson, parameters, hierarchy, carryParentNodes]);
-
-    // --- Dynamic Canvas Size: auto-expand to resolve overlaps & border-touching ---
-    // The overlap check now runs a D3 force simulation (matching MondrianMap's
-    // resolveLayout) so it detects issues in the ACTUAL rendered positions, not
-    // raw UMAP coordinates.
-    //
-    // Rules:
-    //   - Individual layers (L1–L13): each computes its own required size; ALL
-    //     individual layers are synced to the MAX across L1–L13.
-    //   - "All Layers" (null): computes its own size INDEPENDENTLY — it does NOT
-    //     cascade to L1–L13.
-    const [allLayersCanvasSize, setAllLayersCanvasSize] = useState(1000);
-    const [syncedLayerCanvasSize, setSyncedLayerCanvasSize] = useState(1000);
-    const BASE_CANVAS_SIZE = 1000;
-
-    // Compute canvas sizes when data or filter params change
-    useEffect(() => {
-        if (!layoutJson) {
-            setAllLayersCanvasSize(BASE_CANVAS_SIZE);
-            setSyncedLayerCanvasSize(BASE_CANVAS_SIZE);
-            return;
-        }
-
-        const blockSpacing = parameters.blockSpacing || 5;
-        const layers = getAvailableLayers(layoutJson);
-
-        // 1. Compute for each individual layer, track the max
-        let maxLayerSize = BASE_CANVAS_SIZE;
-        for (const layer of layers) {
-            const params = {
-                ...parameters,
-                selectedLayer: layer,
-                maxBlocks: countNodesForLayer(layoutJson, layer, parameters.pValueCutoff),
-                maxEdges: countEdgesForLayer(layoutJson, layer, parameters.pValueCutoff, parameters.jaccardThreshold),
-            };
-            const { entities: layerEntities } = mapRealDataToEntities(layoutJson, { ...params, carryParentNodes }, hierarchy);
-            const required = computeRequiredCanvasSize(layerEntities, BASE_CANVAS_SIZE, 200, 3000, blockSpacing);
-            if (required > maxLayerSize) maxLayerSize = required;
-        }
-        console.log(`[Canvas Auto-Size] Individual layers synced to ${maxLayerSize}×${maxLayerSize}`);
-        setSyncedLayerCanvasSize(maxLayerSize);
-
-        // 2. Compute for "All Layers" (independent)
-        const allParams = {
-            ...parameters,
-            selectedLayer: null,
-            maxBlocks: countNodesForLayer(layoutJson, null, parameters.pValueCutoff),
-            maxEdges: countEdgesForLayer(layoutJson, null, parameters.pValueCutoff, parameters.jaccardThreshold),
-        };
-        const { entities: allEntities } = mapRealDataToEntities(layoutJson, { ...allParams, carryParentNodes }, hierarchy);
-        const allRequired = computeRequiredCanvasSize(allEntities, BASE_CANVAS_SIZE, 200, 3000, blockSpacing);
-        console.log(`[Canvas Auto-Size] All Layers requires ${allRequired}×${allRequired}`);
-        setAllLayersCanvasSize(allRequired);
-    }, [layoutJson, parameters.pValueCutoff, parameters.jaccardThreshold, parameters.blockSizeMultiplier, parameters.blockSpacing]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Effective canvas size for the currently displayed layer
-    const effectiveCanvasSize = useMemo(() => {
-        if (parameters.selectedLayer === null) {
-            return allLayersCanvasSize;
-        }
-        return syncedLayerCanvasSize;
-    }, [allLayersCanvasSize, syncedLayerCanvasSize, parameters.selectedLayer]);
-
-    // Helper to get the effective canvas size for a specific layer (used in downloads)
-    const getCanvasSizeForLayer = useCallback((layer) => {
-        if (layer === null) {
-            return allLayersCanvasSize;
-        }
-        return syncedLayerCanvasSize;
-    }, [allLayersCanvasSize, syncedLayerCanvasSize]);
-
-    /**
-     * Rescale entity x/y coordinates proportionally from the base canvas (1000) to the target size.
-     * This ensures entities actually spread across the expanded canvas rather than bunching in center.
-     */
-    const rescaleEntitiesForCanvas = useCallback((ents, targetSize) => {
-        if (targetSize === BASE_CANVAS_SIZE || !ents || ents.length === 0) return ents;
-        const scale = targetSize / BASE_CANVAS_SIZE;
-        return ents.map(e => ({ ...e, x: e.x * scale, y: e.y * scale }));
-    }, []);
-
-    // Rescale entities for the currently displayed canvas size
-    const rescaledEntities = useMemo(() => {
-        return rescaleEntitiesForCanvas(entities, effectiveCanvasSize);
-    }, [entities, effectiveCanvasSize, rescaleEntitiesForCanvas]);
-
-    // --- Layer zoom handler (for both scroll wheel and +/- buttons) ---
-    const handleLayerZoom = useCallback((direction) => {
-        // direction: +1 = zoom out (higher layer), -1 = zoom in (lower layer)
-        if (!availableLayers || availableLayers.length === 0) return;
-        const current = parameters.selectedLayer;
-        const sortedLayers = [...availableLayers].sort((a, b) => a - b);
-
-        if (current === null) {
-            // From "All": zoom in → go to highest available layer
-            if (direction === -1 && sortedLayers.length > 0) {
-                const newLayer = sortedLayers[sortedLayers.length - 1];
-                const nc = layerNodeCounts[newLayer] ?? 0;
-                const ec = layerEdgeCounts[newLayer] ?? 0;
-                setParameters(prev => ({ ...prev, selectedLayer: newLayer, maxBlocks: nc, maxEdges: ec }));
-            }
-            return;
-        }
-
-        const idx = sortedLayers.indexOf(current);
-        if (idx === -1) return;
-
-        const newIdx = idx + direction;
-        if (newIdx < 0 || newIdx >= sortedLayers.length) return;
-
-        const newLayer = sortedLayers[newIdx];
-        const nc = layerNodeCounts[newLayer] ?? 0;
-        const ec = layerEdgeCounts[newLayer] ?? 0;
-        setParameters(prev => ({
-            ...prev,
-            selectedLayer: newLayer,
-            maxBlocks: nc,
-            maxEdges: ec,
+    const applyLayout = (json) => {
+        setLayoutJson(json);
+        setError(null);
+        setInfo(null);
+        setSelectedId(null);
+        const layers = getAvailableLayers(json);
+        const defaultLayer = layers.length > 0 ? layers[layers.length - 1] : null;
+        setParameters(p => ({
+            ...p,
+            selectedLayer: defaultLayer,
+            maxBlocks: countNodesForLayer(json, defaultLayer, p.pValueCutoff),
+            maxEdges: countEdgesForLayer(json, defaultLayer, p.pValueCutoff, p.jaccardThreshold),
         }));
-    }, [availableLayers, parameters.selectedLayer, layerNodeCounts, layerEdgeCounts]);
-
-    const handleLayerChange = useCallback((newLayer) => {
-        const nc = layerNodeCounts[newLayer] ?? 0;
-        const ec = layerEdgeCounts[newLayer] ?? 0;
-        setParameters(prev => ({
-            ...prev,
-            selectedLayer: newLayer,
-            maxBlocks: nc,
-            maxEdges: ec,
-        }));
-    }, [layerNodeCounts, layerEdgeCounts]);
-
-    const handleDownloadAllLayersZip = async () => {
-        if (!layoutJson || !mondrianMapRef.current) return;
-        setZipDownloadStatus('archiving');
-        try {
-            const zip = new JSZip();
-            const case_study_slug = (layoutJson.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-
-            // Use the component's availableLayers (which correctly excludes L0)
-            const layersToDownload = availableLayers;
-
-            // Helper to get parameters for a specific layer, using that layer's specific max limits
-            const getParamsForLayer = (layer) => ({
-                ...parameters,
-                selectedLayer: layer,
-                maxBlocks: layerNodeCounts[layer] || 10000,
-                maxEdges: layerEdgeCounts[layer] || 10000,
-            });
-
-            // 1. Generate Combined (All Layers) map — uses its own canvas size
-            const allCanvasSize = getCanvasSizeForLayer(null);
-            const { entities: allEntities, relationships: allRelationships } = mapRealDataToEntities(layoutJson, { ...getParamsForLayer(null), carryParentNodes }, hierarchy);
-            const allEntitiesScaled = rescaleEntitiesForCanvas(allEntities, allCanvasSize);
-            const allSvg = mondrianMapRef.current.getSVG('full', allEntitiesScaled, allRelationships, allCanvasSize, allCanvasSize);
-            zip.file(`mondrian_map_full_${case_study_slug}_all.svg`, allSvg);
-            try {
-                const allPng = await svgToPngBlob(allSvg, allCanvasSize, allCanvasSize);
-                zip.file(`mondrian_map_full_${case_study_slug}_all.png`, allPng);
-            } catch (e) {
-                console.error("Failed to generate combined PNG:", e);
-            }
-
-            // 2. Generate each individual layer map — uses synced max canvas size
-            const layerCanvasSize = getCanvasSizeForLayer(1); // any non-null layer returns the synced max
-            for (const layer of layersToDownload) {
-                const { entities: layerEntities, relationships: layerRelationships } = mapRealDataToEntities(layoutJson, { ...getParamsForLayer(layer), carryParentNodes }, hierarchy);
-                if (layerEntities.length > 0) {
-                    const layerEntitiesScaled = rescaleEntitiesForCanvas(layerEntities, layerCanvasSize);
-                    const layerSvg = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, layerRelationships, layerCanvasSize, layerCanvasSize);
-                    zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.svg`, layerSvg);
-                    try {
-                        const layerPng = await svgToPngBlob(layerSvg, layerCanvasSize, layerCanvasSize);
-                        zip.file(`mondrian_map_full_${case_study_slug}_L${layer}.png`, layerPng);
-                    } catch (e) {
-                        console.error(`Failed to generate PNG for layer ${layer}:`, e);
-                    }
-                }
-            }
-
-            // Generate and download zip
-            const content = await zip.generateAsync({ type: 'blob' });
-            const url = URL.createObjectURL(content);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `mondrian_map_all_layers_${case_study_slug}.zip`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            setZipDownloadStatus('success');
-            if (zipDownloadTimerRef.current) clearTimeout(zipDownloadTimerRef.current);
-            zipDownloadTimerRef.current = setTimeout(() => {
-                setZipDownloadStatus('idle');
-                zipDownloadTimerRef.current = null;
-            }, 2000);
-
-        } catch (error) {
-            console.error("Failed to generate ZIP:", error);
-            setZipDownloadStatus('idle');
-        }
+        setDrawerOpen(false);
     };
 
-    const isSelectionActive = selectedNodes.length > 0;
-    const case_study_slug = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-    const layerSuffix = parameters.selectedLayer === null ? '_all' : `_L${parameters.selectedLayer}`;
-    const mapDownloadLabel = parameters.selectedLayer === null
-        ? "Download All Layers Combined"
-        : `Download Layer ${parameters.selectedLayer}`;
+    // ── Derived: available layers + counts (per-layer) ────────────────
+    const availableLayers = useMemo(() => getAvailableLayers(layoutJson), [layoutJson]);
+    const layerCounts = useMemo(() => computeLayerCounts(layoutJson, parameters), [layoutJson, parameters.pValueCutoff, parameters.minGenes]);
 
-    const mapDownloadTooltip = parameters.selectedLayer === null
-        ? "Download MondrianMap for all layers combined as PNG."
-        : `Download MondrianMap for Layer ${parameters.selectedLayer} as PNG.`;
+    // ── Derived: terms + edges in design's shape (bridge real data → prototype shape) ──
+    const { terms, edges, upN, downN } = useMemo(() => {
+        if (!layoutJson) return { terms: [], edges: [], upN: 0, downN: 0 };
+        return bridgeLayoutToDesign(layoutJson, parameters, hierarchy, PLATE_W, PLATE_H);
+    }, [layoutJson, parameters, hierarchy]);
+
+    // ── Handlers ──────────────────────────────────────────────────────
+    const onLayerChange = useCallback((L) => {
+        setSelectedId(null);
+        setParameters(p => ({
+            ...p,
+            selectedLayer: L,
+            maxBlocks: countNodesForLayer(layoutJson, L, p.pValueCutoff),
+            maxEdges: countEdgesForLayer(layoutJson, L, p.pValueCutoff, p.jaccardThreshold),
+        }));
+    }, [layoutJson]);
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────
+    useEffect(() => {
+        const onKey = (e) => {
+            const tag = e.target?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (e.key === 'Escape') { setSelectedId(null); setDrawerOpen(false); }
+            if (e.key === '/' || e.key === 'm' || e.key === 'M') { e.preventDefault(); setDrawerOpen(v => !v); }
+            if (e.key === '+' || e.key === '=') viewRef.current?.zoomIn();
+            if (e.key === '-') viewRef.current?.zoomOut();
+            if (e.key === '0') viewRef.current?.reset();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // ── Case label for search pill ────────────────────────────────────
+    const caseLabel = layoutJson?.metadata?.case_study || (isLoading ? 'Running enrichment…' : 'No dataset loaded');
+    const layerHint = parameters.selectedLayer == null
+        ? (availableLayers.length ? 'L1–13' : '—')
+        : 'L' + parameters.selectedLayer;
+
+    const selectedTerm = selectedId ? terms.find(t => t.id === selectedId) : null;
 
     return (
-        <div className="h-screen w-screen overflow-hidden bg-gray-50 flex font-sans">
-            {/* Collapsible Left Sidebar — always mounted to preserve internal state */}
-            <motion.div
-                initial={false}
-                animate={{
-                    width: isPanelOpen ? 450 : 0,
-                    opacity: isPanelOpen ? 1 : 0,
-                }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-                className="h-full bg-white shadow-xl z-20 flex flex-col border-r border-gray-200 relative shrink-0"
-                style={{ overflow: 'visible' }}
-            >
-                <div className="w-full h-full overflow-hidden">
-                    <div className="w-[450px] h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden">
-                        {/* Header */}
-                        <div className="mb-8">
-                            <h1 className="text-3xl font-bold mb-1 text-black tracking-tight" style={{ fontFamily: 'Inter, sans-serif' }}>
-                                MondrianMap
-                            </h1>
-                            <p className="text-gray-500 text-sm mt-0.5 leading-relaxed">Navigating gene set hierarchies with multi-resolution maps</p>
-                        </div>
-
-                        <div className="flex flex-col gap-6">
-                            {/* Gene Set Input */}
-                            <GeneSetInput
-                                onRunAnalysis={handleRunAnalysis}
-                                isLoading={isLoading}
-                                onModeChange={setInputMode}
-                                onInteraction={() => setParameters(prev => ({ ...prev, pValueCutoff: 0.05 }))}
-                            />
-
-                            {/* Error message */}
-                            {error && (
-                                <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-none">
-                                    <span className="font-bold">Error:</span> {error}
-                                </div>
-                            )}
-
-                            {/* Info message moved to canvas */}
-
-                            <ParameterControls
-                                parameters={parameters}
-                                onParametersChange={handleParametersChange}
-                                nodeCount={totalNodeCount}
-                                edgeCount={totalEdgeCount}
-                                availableLayers={availableLayers}
-                                layerNodeCounts={layerNodeCounts}
-                                layerEdgeCounts={layerEdgeCounts}
-                            />
-                        </div>
-
-                        <InfoPanel />
-                    </div>
-                </div>
-
-                {/* Collapse toggle — only visible when panel is open */}
-                {isPanelOpen && (
-                    <button
-                        onClick={() => setIsPanelOpen(false)}
-                        className="absolute top-1/2 -right-3 transform -translate-y-1/2 bg-white border border-gray-200 shadow-md rounded-full p-1 hover:bg-gray-50 z-30"
-                        title="Collapse sidebar"
-                    >
-                        <ChevronLeft size={16} />
-                    </button>
+        <div className="map-app" onClick={() => setDrawerOpen(false)}>
+            <MapSurface ref={viewRef} plateW={PLATE_W} plateH={PLATE_H}
+                onViewChange={(v) => setZoom(v.k)}>
+                {terms.length > 0 ? (
+                    <MondrianPlate
+                        terms={terms}
+                        edges={edges}
+                        selected={selectedId}
+                        onSelect={setSelectedId}
+                        showEdges={showEdges}
+                        showLabels={showLabels}
+                        plateW={PLATE_W}
+                        plateH={PLATE_H}
+                        zoom={zoom}
+                    />
+                ) : (
+                    <EmptyPlate width={PLATE_W} height={PLATE_H}
+                        message={
+                            error ? `Error: ${error}` :
+                            info ? info :
+                            isLoading ? 'Running enrichment…' :
+                            'No dataset loaded. Open the menu to paste a gene set and run enrichment.'
+                        }
+                    />
                 )}
-            </motion.div>
+            </MapSurface>
 
-            {/* Main Content Area */}
-            <div className="flex-1 relative h-full min-w-0">
-                {/* Empty State / Info Messages overlay */}
-                {(!layoutJson && !isLoading && !error) && (
-                    <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                        <div className="text-gray-500 text-lg pointer-events-auto text-center mx-4 max-w-md">
-                            {info ? info : (
-                                inputMode === 'custom'
-                                    ? "Enter your gene sets and click Run Enrichment Analysis to generate the Hierarchical MondrianMaps."
-                                    : "Select a case study and condition, then click Run Enrichment Analysis to generate the Hierarchical MondrianMaps."
-                            )}
-                        </div>
-                    </div>
-                )}
+            <SearchPill
+                caseLabel={caseLabel}
+                upN={upN}
+                downN={downN}
+                visibleCount={terms.length}
+                layerHint={layerHint}
+                onOpenDrawer={() => setDrawerOpen(true)}
+            />
+            <TopRightCluster onShowLogin={() => setShowLogin(true)} />
 
-                <AnimatePresence>
-                    {!isPanelOpen && (
-                        <motion.button
-                            key="open-left"
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            onClick={() => setIsPanelOpen(true)}
-                            className="absolute top-6 left-6 z-10 bg-white p-3 rounded-md shadow-lg hover:bg-gray-50 text-gray-700"
-                        >
-                            <Menu size={24} />
-                        </motion.button>
-                    )}
-                    {layoutJson && !isRightPanelOpen && (
-                        <motion.button
-                            key="open-right"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            onClick={() => setIsRightPanelOpen(true)}
-                            className="absolute top-6 right-6 z-10 bg-white p-3 rounded-md shadow-lg hover:bg-gray-50 text-gray-700"
-                            title="Show results panel"
-                        >
-                            <ChevronLeft size={24} />
-                        </motion.button>
-                    )}
-                </AnimatePresence>
+            <MapLegend embedding={embedding} />
 
-                <div className="absolute inset-0 overflow-hidden">
-                    <AnimatePresence mode="popLayout" custom={zoomDirection} initial={false}>
-                        <motion.div
-                            key={parameters.selectedLayer}
-                            custom={zoomDirection}
-                            variants={zoomVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                            className="w-full h-full"
-                            style={{ willChange: 'transform, opacity' }}
-                        >
-                            <MondrianMap
-                                ref={mondrianMapRef}
-                                entities={rescaledEntities}
-                                relationships={relationships}
-                                width={effectiveCanvasSize}
-                                height={effectiveCanvasSize}
-                                parameters={parameters}
-                                isLoading={isLoading}
-                                onSelectionChange={handleSelectionChange}
-                                onLayerZoom={handleLayerZoom}
-                                metadata={layoutJson?.metadata || {}}
-                                showAnnotations={showAnnotations}
-                                showAnimations={showAnimations}
-                            />
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
+            <MapControls
+                currentLayer={parameters.selectedLayer}
+                availableLayers={availableLayers}
+                layerCounts={layerCounts}
+                onLayerChange={onLayerChange}
+                onZoomIn={() => viewRef.current?.zoomIn()}
+                onZoomOut={() => viewRef.current?.zoomOut()}
+                onReset={() => viewRef.current?.reset()}
+            />
 
-                {/* ── Bottom-right Interaction Stack ── */}
-                <div className="absolute bottom-6 right-6 z-10 flex flex-col items-end gap-3 pointer-events-none">
-                    {/* Layer Zoom Control — right side of map, vertically centered previously, now on top of downloads */}
-                    {layoutJson && availableLayers.length > 0 && (
-                        <div className="pointer-events-auto">
-                            <LayerZoomControl
-                                currentLayer={parameters.selectedLayer}
-                                availableLayers={availableLayers}
-                                onLayerChange={handleLayerChange}
-                                allLayers={13}
-                                defaultLayer={Math.max(...availableLayers)}
-                            />
-                        </div>
-                    )}
-                </div>
-            </div>
+            <LeftDrawer
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                onRunAnalysis={handleRunAnalysis}
+                isLoading={isLoading}
+                parameters={parameters}
+                onParametersChange={setParameters}
+                visibleTerms={terms}
+                selectedId={selectedId}
+                onSelectTerm={setSelectedId}
+                onShowImport={() => { setShowImport(true); setDrawerOpen(false); }}
+                showEdges={showEdges}
+                showLabels={showLabels}
+                onToggleEdges={() => setShowEdges(v => !v)}
+                onToggleLabels={() => setShowLabels(v => !v)}
+            />
 
-            {/* Right Sidebar for Enrichment Results & AI Explain — always mounted when data exists */}
-            {layoutJson && (
-                <motion.div
-                    initial={false}
-                    animate={{
-                        width: isRightPanelOpen ? (isPanelOpen ? 506 : '40vw') : 0,
-                        opacity: isRightPanelOpen ? 1 : 0,
-                    }}
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="h-full bg-gray-50 shadow-xl z-20 flex flex-col border-l border-gray-200 relative shrink-0"
-                    style={{ overflow: 'visible' }}
-                >
-                    {/* Collapse toggle — only visible when panel is open */}
-                    {isRightPanelOpen && (
-                        <button
-                            onClick={() => setIsRightPanelOpen(false)}
-                            className="absolute top-1/2 -left-3 transform -translate-y-1/2 bg-white border border-gray-200 shadow-md rounded-full p-1 hover:bg-gray-50 z-30"
-                            title="Collapse results panel"
-                        >
-                            <ChevronRight size={16} />
-                        </button>
-                    )}
+            <DetailDrawer term={selectedTerm} onClose={() => setSelectedId(null)} />
 
-                    <div className="w-full h-full overflow-hidden">
-                        <div className="w-full h-full flex flex-col p-6 overflow-y-auto overflow-x-hidden pb-12" style={{ minWidth: isPanelOpen ? '506px' : '40vw' }}>
-                            {/* NEW: Collapsible Options at the very top */}
-                            <CollapsibleSection title="Options" defaultOpen={false}>
-                                <div className="flex flex-col gap-4 px-1">
-                                    <ToggleSwitch
-                                        id="toggle-annotations"
-                                        label="Show Annotations"
-                                        checked={showAnnotations}
-                                        onChange={setShowAnnotations}
-                                        icon={<Type size={14} />}
-                                    />
-                                    <ToggleSwitch
-                                        id="toggle-carry"
-                                        label="Hierarchical Term Projection"
-                                        checked={carryParentNodes}
-                                        onChange={setCarryParentNodes}
-                                        icon={<Archive size={14} />}
-                                    />
-                                    <ToggleSwitch
-                                        id="toggle-animations"
-                                        label="Enable Animations"
-                                        checked={showAnimations}
-                                        onChange={setShowAnimations}
-                                        icon={<Sparkles size={14} />}
-                                    />
-                                </div>
-                            </CollapsibleSection>
-
-                            <DataTable
-                                layoutJson={layoutJson}
-                                filteredNodes={entities}
-                                filteredEdges={relationships}
-                                onSelectionToggle={(type, id, isMulti) =>
-                                    mondrianMapRef.current?.toggleSelection(type, id, isMulti)
-                                }
-                                selection={{
-                                    nodes: new Set(selectedNodes.map(n => n.id)),
-                                    edges: selectedRelationshipIds
-                                }}
-                                currentLayer={parameters.selectedLayer}
-                                aiSection={
-                                    <AIExplainPanel
-                                        selectedNodes={selectedNodes}
-                                        selectedRelationshipIds={selectedRelationshipIds}
-                                        allEdges={relationships}
-                                        metadata={layoutJson?.metadata || {}}
-                                        parameters={parameters}
-                                        getSelectionSVG={() => {
-                                            if (!mondrianMapRef.current) return null;
-                                            const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                            return mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
-                                        }}
-                                    />
-                                }
-                            />
-
-                            {/* Downloads — grouped below everything */}
-                            <div className="flex flex-col gap-8 mt-8 pb-20">
-                                <div>
-                                    <div className="flex flex-col gap-2">
-                                        {/* Layer / Full map download (hidden during selection) */}
-                                        {!isSelectionActive && (
-                                            <button
-                                                onClick={async () => {
-                                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                                    const filename = `mondrian_map_full_${caseName}${layerSuffix}.png`;
-
-                                                    if (!mondrianMapRef.current) return;
-                                                    const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                                    const layerEntitiesScaled = rescaleEntitiesForCanvas(entities, canvasSize);
-                                                    const svgString = mondrianMapRef.current.getSVG('full', layerEntitiesScaled, relationships, canvasSize, canvasSize);
-
-                                                    try {
-                                                        const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
-                                                        const url = URL.createObjectURL(pngBlob);
-                                                        const link = document.createElement("a");
-                                                        link.href = url;
-                                                        link.download = filename;
-                                                        document.body.appendChild(link);
-                                                        link.click();
-                                                        document.body.removeChild(link);
-                                                        URL.revokeObjectURL(url);
-                                                    } catch (e) {
-                                                        console.error("Failed to generate PNG map:", e);
-                                                    }
-                                                }}
-                                                className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                                title={mapDownloadTooltip}
-                                            >
-                                                <Download size={14} />
-                                                {mapDownloadLabel}
-                                            </button>
-                                        )}
-
-                                        {/* Selection-specific download */}
-                                        {isSelectionActive && (
-                                            <button
-                                                onClick={async () => {
-                                                    const caseName = (layoutJson?.metadata?.case_study || 'analysis').replace(/\s+/g, '_');
-                                                    const layerSuffix = getLayerSuffix(parameters.selectedLayer);
-                                                    const filename = `mondrian_map_selection_${caseName}${layerSuffix}.png`;
-
-                                                    if (!mondrianMapRef.current) return;
-                                                    const canvasSize = getCanvasSizeForLayer(parameters.selectedLayer);
-                                                    const svgString = mondrianMapRef.current.getSVG('selection', null, null, canvasSize, canvasSize);
-
-                                                    try {
-                                                        const pngBlob = await svgToPngBlob(svgString, canvasSize, canvasSize);
-                                                        const url = URL.createObjectURL(pngBlob);
-                                                        const link = document.createElement("a");
-                                                        link.href = url;
-                                                        link.download = filename;
-                                                        document.body.appendChild(link);
-                                                        link.click();
-                                                        document.body.removeChild(link);
-                                                        URL.revokeObjectURL(url);
-                                                    } catch (e) {
-                                                        console.error("Failed to generate Selection PNG map:", e);
-                                                    }
-                                                }}
-                                                className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                                title="Download MondrianMap for only the current selection as PNG."
-                                            >
-                                                <Download size={14} />
-                                                Download Selection
-                                            </button>
-                                        )}
-
-                                        {/* Bulk ZIP download */}
-                                        <button
-                                            onClick={handleDownloadAllLayersZip}
-                                            disabled={zipDownloadStatus === 'archiving'}
-                                            className="w-full bg-black text-white py-3 px-4 hover:bg-gray-800 flex items-center justify-center gap-2 font-bold uppercase tracking-wider transition-colors rounded-none text-sm"
-                                            title="Download MondrianMaps for all layers in a ZIP archive."
-                                        >
-                                            {zipDownloadStatus === 'archiving' ? (
-                                                <> <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Archiving...</>
-                                            ) : zipDownloadStatus === 'success' ? (
-                                                <><Check size={14} /> Downloaded</>
-                                            ) : (
-                                                <><Archive size={14} /> Download All Layers</>
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </motion.div>
-            )}
+            <ImportModal open={showImport}
+                onClose={() => setShowImport(false)}
+                onFinish={() => setShowImport(false)} />
+            <LoginModal open={showLogin} onClose={() => setShowLogin(false)} />
         </div>
     );
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// Empty plate — shown when there is no enrichment result yet.
+// ────────────────────────────────────────────────────────────────────────
+function EmptyPlate({ width, height, message }) {
+    return (
+        <svg viewBox={`0 0 ${width} ${height}`}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ display: 'block', width: '100%', height: '100%' }}>
+            <rect x={0} y={0} width={width} height={height} fill="#ffffff" />
+            <rect x={30} y={30} width={width - 60} height={height - 60}
+                fill="none" stroke="#e7e6e2" strokeWidth={1} shapeRendering="crispEdges" />
+            <g transform={`translate(${width / 2}, ${height / 2 - 60})`}>
+                <g transform="translate(-40, -40)">
+                    <rect x={0} y={0} width={38} height={38} fill="#E63946" stroke="#111" strokeWidth={1.5} />
+                    <rect x={42} y={0} width={38} height={38} fill="#FFC928" stroke="#111" strokeWidth={1.5} />
+                    <rect x={0} y={42} width={38} height={38} fill="#1D4ED8" stroke="#111" strokeWidth={1.5} />
+                    <rect x={42} y={42} width={38} height={38} fill="#ffffff" stroke="#111" strokeWidth={1.5} />
+                </g>
+                <text x={0} y={80} fontSize={22} fontFamily="var(--display)" fontWeight={600}
+                    fill="#111" textAnchor="middle">Mondrian Map</text>
+                <text x={0} y={120} fontSize={14} fontFamily="var(--display)" fontWeight={400}
+                    fill="#5c5c63" textAnchor="middle">
+                    <tspan>{message}</tspan>
+                </text>
+            </g>
+        </svg>
+    );
+}
 
-// ---------------------------------------------------------------------------
-// Pure helper functions (no React state)
-// ---------------------------------------------------------------------------
+// ────────────────────────────────────────────────────────────────────────
+// Data bridge: existing layoutJson → design-shaped terms & edges.
+// Ports the relevant parts of the old mapRealDataToEntities, adjusted to
+// emit { id, name, layer, logp, n, dir, genes, x, y } in [0,1] coords.
+// ────────────────────────────────────────────────────────────────────────
+function bridgeLayoutToDesign(layoutJson, parameters, hierarchy, plateW, plateH) {
+    const { selectedLayer, pValueCutoff, jaccardThreshold, maxBlocks, maxEdges, minGenes } = parameters;
+
+    // 1. Filter real nodes for current layer
+    let nodes = layoutJson.nodes.filter(n =>
+        (selectedLayer == null || n.layer === selectedLayer) &&
+        n.adjusted_p_value <= pValueCutoff &&
+        (n.gene_count ?? (n.genes?.length ?? 0)) >= (minGenes ?? 1)
+    );
+    nodes.sort((a, b) => (b.significance_score ?? 0) - (a.significance_score ?? 0));
+    if (maxBlocks) nodes = nodes.slice(0, maxBlocks);
+
+    if (nodes.length === 0) return { terms: [], edges: [], upN: 0, downN: 0 };
+
+    // 2. Figure out the extent of node grid_coords to normalize to [0,1]
+    const xs = nodes.map(n => n.grid_coords?.x ?? 500);
+    const ys = nodes.map(n => n.grid_coords?.y ?? 500);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+
+    const terms = nodes.map(n => {
+        const logp = -Math.log10(Math.max(1e-20, n.adjusted_p_value || 1));
+        const dir = n.direction === 'upregulated' ? 1
+            : n.direction === 'downregulated' ? -1
+            : 0;
+        // Normalize grid_coords into [0.05, 0.95] to keep margin off the plate edge
+        const nx = spanX > 1 ? 0.05 + 0.9 * ((n.grid_coords?.x ?? 500) - minX) / spanX : 0.5;
+        const ny = spanY > 1 ? 0.05 + 0.9 * ((n.grid_coords?.y ?? 500) - minY) / spanY : 0.5;
+        return {
+            id: `GO:${n.go_id}`.replace(/^GO:GO:/, 'GO:'),
+            name: n.name,
+            layer: n.layer,
+            logp,
+            n: n.gene_count ?? (n.genes?.length ?? 0),
+            dir,
+            genes: n.genes || [],
+            x: nx,
+            y: ny,
+        };
+    });
+
+    // 3. Edges
+    const nodeIds = new Set(terms.map(t => t.id));
+    const normalize = (id) => id.startsWith('GO:') ? id : `GO:${id}`;
+    let rawEdges = (layoutJson.edges || []).filter(e => {
+        const s = normalize(e.source);
+        const t = normalize(e.target);
+        return nodeIds.has(s) && nodeIds.has(t) && e.weight >= (jaccardThreshold ?? 0.15);
+    });
+    rawEdges.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+    if (maxEdges) rawEdges = rawEdges.slice(0, maxEdges);
+    const edges = rawEdges.map(e => [normalize(e.source), normalize(e.target), e.weight ?? 0.4]);
+
+    // 4. Up/down counts (for search pill chip)
+    let upN = 0, downN = 0;
+    for (const t of terms) { if (t.dir > 0) upN++; else if (t.dir < 0) downN++; }
+
+    return { terms, edges, upN, downN };
+}
 
 function getAvailableLayers(layoutJson) {
     if (!layoutJson?.nodes) return [];
@@ -803,243 +333,42 @@ function getAvailableLayers(layoutJson) {
 
 function countNodesForLayer(layoutJson, layer, pValueCutoff) {
     if (!layoutJson?.nodes) return 0;
-    return layoutJson.nodes.filter(n => {
-        const inLayer = layer === null ? true : n.layer === layer;
-        const passesPValue = n.adjusted_p_value <= pValueCutoff;
-        return inLayer && passesPValue;
-    }).length;
+    return layoutJson.nodes.filter(n =>
+        (layer == null ? true : n.layer === layer) &&
+        n.adjusted_p_value <= pValueCutoff
+    ).length;
 }
 
 function countEdgesForLayer(layoutJson, layer, pValueCutoff, jaccardThreshold) {
     if (!layoutJson?.nodes || !layoutJson?.edges) return 0;
-    const nodeIds = new Set(
+    const ids = new Set(
         layoutJson.nodes
-            .filter(n => {
-                const inLayer = layer === null ? true : n.layer === layer;
-                return inLayer && n.adjusted_p_value <= pValueCutoff;
-            })
+            .filter(n => (layer == null ? true : n.layer === layer) && n.adjusted_p_value <= pValueCutoff)
             .map(n => n.go_id)
     );
-    return layoutJson.edges.filter(e =>
-        nodeIds.has(e.source) && nodeIds.has(e.target) && e.weight >= jaccardThreshold
-    ).length;
+    return layoutJson.edges.filter(e => {
+        const s = e.source.replace(/^GO:/, '');
+        const t = e.target.replace(/^GO:/, '');
+        return ids.has(s) && ids.has(t) && e.weight >= jaccardThreshold;
+    }).length;
 }
 
-/**
- * Map pipeline JSON to the entity/relationship format used by MondrianMap,
- * applying all active parameter filters and limits.
- * 
- * Also includes "ghost" parent nodes from the previous layer if they have no 
- * descendants in the current layer's enrichment results.
- */
-function mapRealDataToEntities(layoutJson, parameters, hierarchy = null) {
-    if (!layoutJson?.nodes) return { entities: [], relationships: [] };
-
-    const { selectedLayer, pValueCutoff, jaccardThreshold, maxBlocks, maxEdges, blockSizeMultiplier, carryParentNodes = true } = parameters;
-
-    // 1. Filter real nodes for current layer
-    let currentLayerNodes = layoutJson.nodes.filter(n =>
-        (selectedLayer === null || n.layer === selectedLayer) && n.adjusted_p_value <= pValueCutoff
-    );
-
-    // Sort by significance and limit
-    currentLayerNodes.sort((a, b) => b.significance_score - a.significance_score);
-    currentLayerNodes = currentLayerNodes.slice(0, maxBlocks);
-
-    const currentLayerNodeIds = new Set(currentLayerNodes.map(n => n.go_id));
-
-    // 2. Identify Ghost Parent Nodes
-    // If we are in a specific layer (not "All Layers"), look for parents from layer + 1
-    let ghostNodes = [];
-    if (carryParentNodes && selectedLayer !== null && hierarchy) {
-        const parentLayer = selectedLayer + 1;
-        const parentCandidates = layoutJson.nodes.filter(n =>
-            n.layer === parentLayer && n.adjusted_p_value <= pValueCutoff
-        );
-
-        parentCandidates.forEach(parent => {
-            // Check if this parent has ANY descendant in currentLayerNodes
-            const hasDescendant = checkHasDescendantInList(parent.go_id, currentLayerNodeIds, hierarchy);
-
-            if (!hasDescendant) {
-                // If it doesn't have an enriched descendant, it's a candidate for a ghost
-                // Ghost nodes should not collide with real nodes or other ghosts
-                const ghost = { ...parent, isGhost: true };
-
-                // collision check (raw grid coords)
-                const collides = checkCollision(ghost, currentLayerNodes, 30); // 30 is a safe threshold
-                if (!collides) {
-                    ghostNodes.push(ghost);
-                }
-            }
-        });
+function computeLayerCounts(layoutJson, parameters) {
+    const out = {};
+    for (let L = 1; L <= 13; L++) out[L] = { up: 0, down: 0, total: 0 };
+    if (!layoutJson?.nodes) return out;
+    const minGenes = parameters.minGenes ?? 1;
+    const pCutoff = parameters.pValueCutoff ?? 0.05;
+    for (const n of layoutJson.nodes) {
+        if (n.adjusted_p_value > pCutoff) continue;
+        if ((n.gene_count ?? (n.genes?.length ?? 0)) < minGenes) continue;
+        const bucket = out[n.layer];
+        if (!bucket) continue;
+        bucket.total++;
+        if (n.direction === 'upregulated') bucket.up++;
+        else if (n.direction === 'downregulated') bucket.down++;
     }
-
-    const allNodes = [...currentLayerNodes, ...ghostNodes];
-    const allNodeIds = new Set(allNodes.map(n => n.go_id));
-
-    const getBlockColor = (node) => {
-        if (node.isGhost) {
-            if (node.direction === 'upregulated') return '#EFB7C1'; // Faint Red
-            if (node.direction === 'downregulated') return '#B6D5E8'; // Faint Blue
-            if (node.direction === 'shared') return '#FDF2C2'; // Faint Yellow
-            return '#CCCCCC'; // Faint Gray
-        }
-        return node.color;
-    };
-
-    const entities = allNodes.map(node => ({
-        id: `GO:${node.go_id}`,
-        go_id: node.go_id,
-        name: node.name,
-        x: node.grid_coords.x,
-        y: node.grid_coords.y,
-        w: node.grid_coords.w * blockSizeMultiplier,
-        h: node.grid_coords.h * blockSizeMultiplier,
-        foldChange: node.direction === 'upregulated' ? 1.5 : node.direction === 'downregulated' ? 0.5 : 1.0,
-        pValue: node.adjusted_p_value,
-        significance_score: node.significance_score,
-        direction: node.direction,
-        color: getBlockColor(node),
-        gene_count: node.gene_count,
-        genes: node.genes || [],
-        layer: node.layer,
-        level: node.level,
-        isGhost: node.isGhost || false,
-    }));
-
-    // 3. Filter edges
-    // Normalize source/target IDs (remove 'GO:' prefix if present in layoutJson)
-    const normalizeId = (id) => id.startsWith('GO:') ? id.substring(3) : id;
-
-    let filteredOriginalEdges = layoutJson.edges.filter(e => {
-        const s = normalizeId(e.source);
-        const t = normalizeId(e.target);
-        return allNodeIds.has(s) && allNodeIds.has(t) && e.weight >= jaccardThreshold;
-    });
-
-    // 5. Sort by weight and limit
-    // To ensure GO-GO crosstalks are not dropped by high-weight Parent edges, 
-    // we use a larger limit if Parent carrying is active and prioritize GO-GO.
-    const effectiveMaxEdges = carryParentNodes ? maxEdges + 150 : maxEdges;
-
-    // Identify which nodes are ghosts
-    const ghostIdSet = new Set(ghostNodes.map(n => `GO:${n.go_id}`));
-
-    const allRelationships = filteredOriginalEdges.map(e => {
-        const sourceId = `GO:${normalizeId(e.source)}`;
-        const targetId = `GO:${normalizeId(e.target)}`;
-        return {
-            source: sourceId,
-            target: targetId,
-            weight: e.weight,
-            type: e.type || 'gene_overlap',
-            isGhostEdge: ghostIdSet.has(sourceId) || ghostIdSet.has(targetId),
-        };
-    });
-
-    // Prioritize GO-GO (non-ghost) edges, then by weight
-    allRelationships.sort((a, b) => {
-        if (a.isGhostEdge !== b.isGhostEdge) {
-            return a.isGhostEdge ? 1 : -1;
-        }
-        return b.weight - a.weight;
-    });
-
-    const relationships = allRelationships.slice(0, effectiveMaxEdges);
-
-    return { entities, relationships };
-}
-
-/**
- * Recursively check if a GO term has any descendants in a given list of enriched IDs.
- */
-function checkHasDescendantInList(parentId, enrichedIds, hierarchy, visited = new Set()) {
-    if (visited.has(parentId)) return false;
-    visited.add(parentId);
-
-    const children = hierarchy[parentId] || [];
-    for (const childId of children) {
-        if (enrichedIds.has(childId)) return true;
-        if (checkHasDescendantInList(childId, enrichedIds, hierarchy, visited)) return true;
-    }
-    return false;
-}
-
-/**
- * Basic spatial collision check for blocks.
- */
-function checkCollision(candidate, existingNodes, threshold = 20) {
-    const cx = candidate.grid_coords.x;
-    const cy = candidate.grid_coords.y;
-    const cw = candidate.grid_coords.w;
-    const ch = candidate.grid_coords.h;
-
-    for (const node of existingNodes) {
-        const nx = node.grid_coords.x;
-        const ny = node.grid_coords.y;
-        const nw = node.grid_coords.w;
-        const nh = node.grid_coords.h;
-
-        // Check if rectangles overlap (with small padding threshold)
-        const overlapX = Math.abs(cx - nx) < (cw / 2 + nw / 2 + threshold);
-        const overlapY = Math.abs(cy - ny) < (ch / 2 + nh / 2 + threshold);
-
-        if (overlapX && overlapY) return true;
-    }
-    return false;
-}
-
-/**
- * Premium iOS-style Toggle Switch
- */
-function ToggleSwitch({ id, label, checked, onChange, icon }) {
-    return (
-        <div
-            className="flex items-center justify-between py-1.5 group cursor-pointer select-none"
-            onClick={() => onChange(!checked)}
-        >
-            <div className="flex items-center gap-3 text-gray-700">
-                {icon && <span className="text-gray-400 group-hover:text-black transition-colors">{icon}</span>}
-                <span className="text-sm font-medium">
-                    {label}
-                </span>
-            </div>
-            <div
-                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${checked ? 'bg-black' : 'bg-gray-200'}`}
-                role="switch"
-                aria-checked={checked}
-            >
-                <span
-                    className={`${checked ? 'translate-x-3.5' : 'translate-x-0.5'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ease-in-out`}
-                />
-            </div>
-        </div>
-    );
-}
-
-/**
- * Premium collapsible container
- */
-function CollapsibleSection({ title, children, defaultOpen = true }) {
-    const [isOpen, setIsOpen] = useState(defaultOpen);
-    const panelCls = 'bg-white p-5 shadow-lg border-2 border-black w-full rounded-none mb-6';
-    const headerCls = 'flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors -mx-5 -my-5 p-5';
-    const titleCls = 'text-base font-bold text-black tracking-wide';
-
-    return (
-        <div className={panelCls}>
-            <div className={headerCls} onClick={() => setIsOpen(o => !o)}>
-                <h2 className={titleCls}>{title}</h2>
-                {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-            </div>
-            {isOpen && (
-                <div className="mt-5 pt-5 border-t border-gray-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                    {children}
-                </div>
-            )}
-        </div>
-    );
+    return out;
 }
 
 export default App;

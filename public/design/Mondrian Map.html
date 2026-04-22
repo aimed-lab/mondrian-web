@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mondrian Map — multi-resolution enrichment</title>
+<meta name="viewport" content="width=1280, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles/theme.css?v=7" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="data/cohort.js"></script>
+<script src="data/enrichment.js"></script>
+<script type="text/babel" src="components/MondrianCanvas.jsx"></script>
+<script type="text/babel" src="components/MapUI.jsx"></script>
+<script type="text/babel" src="components/Modals.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+const TWEAKS = /*EDITMODE-BEGIN*/{
+  "palette": "mondrian",
+  "showEdges": true,
+  "showLabels": true,
+  "density": "cozy"
+}/*EDITMODE-END*/;
+
+const PLATE_W = 1200;
+const PLATE_H = 1200;
+
+function App() {
+  const [state, setState] = useState({
+    datasetId: "lincs_tp53_kras",
+    cohortIds: ["tp53_r1"],
+    embedding: "gobert_umap",
+    layer: 5,
+    pThreshold: 0.05,
+    minGenes: 2,
+    jaccard: 0.15,
+    showEdges: TWEAKS.showEdges,
+    showLabels: TWEAKS.showLabels,
+    selected: null,
+    showImport: false,
+    showLogin: false,
+    showExport: false,
+    caseLabel: "TP53 KO · A549 · rep 1",
+    upN: 13, downN: 11,
+    user: null,
+    drawerOpen: false,      // left drawer starts closed — map-first
+    tweaksOpen: false,
+  });
+
+  const [zoom, setZoom] = useState(1);
+  const viewRef = useRef(null);
+
+  // Filtered terms for current layer + thresholds
+  const visibleTerms = useMemo(() => {
+    return window.MM_TERMS.filter(t => {
+      if (state.layer !== "all" && t.layer !== state.layer) return false;
+      const minLogP = -Math.log10(state.pThreshold);
+      if (t.logp < minLogP - 1.5) return false;
+      if (t.n < state.minGenes) return false;
+      return true;
+    });
+  }, [state.layer, state.pThreshold, state.minGenes]);
+
+  // Update caption when dataset/cohort change
+  useEffect(() => {
+    const ds = window.MM_DATASETS.find(d => d.id === state.datasetId);
+    const c = ds?.cohorts.find(x => x.id === state.cohortIds[0]);
+    if (ds && c) {
+      setState(s => ({ ...s,
+        caseLabel: `${c.label} · ${ds.source}`,
+        upN: c.up, downN: c.down,
+      }));
+    }
+  }, [state.datasetId, state.cohortIds[0]]);
+
+  // Tweaks host integration
+  useEffect(() => {
+    function onMsg(ev) {
+      const d = ev.data || {};
+      if (d.type === "__activate_edit_mode") setState(s => ({...s, tweaksOpen: true}));
+      if (d.type === "__deactivate_edit_mode") setState(s => ({...s, tweaksOpen: false}));
+    }
+    window.addEventListener("message", onMsg);
+    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+
+  const layerCounts = useMemo(() => {
+    const counts = {};
+    for (let L = 1; L <= 13; L++) counts[L] = { up: 0, down: 0, total: 0 };
+    window.MM_TERMS.forEach(t => {
+      counts[t.layer] = counts[t.layer] || { up: 0, down: 0, total: 0 };
+      counts[t.layer].total++;
+      if (t.dir > 0) counts[t.layer].up++;
+      else if (t.dir < 0) counts[t.layer].down++;
+    });
+    return counts;
+  }, []);
+
+  // Export menu click-away
+  useEffect(() => {
+    if (!state.showExport) return;
+    const handler = () => setState(s => ({...s, showExport: false}));
+    setTimeout(() => document.addEventListener("click", handler, { once: true }), 0);
+    return () => document.removeEventListener("click", handler);
+  }, [state.showExport]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKey(e) {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (e.key === "Escape") setState(s => ({...s, selected: null, drawerOpen: false}));
+      if (e.key === "/" || e.key === "m") { e.preventDefault(); setState(s => ({...s, drawerOpen: !s.drawerOpen})); }
+      if (e.key === "+" || e.key === "=") viewRef.current?.zoomIn();
+      if (e.key === "-") viewRef.current?.zoomOut();
+      if (e.key === "0") viewRef.current?.reset();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const enrichedState = {
+    ...state,
+    visibleCount: visibleTerms.length,
+  };
+
+  return (
+    <div className="map-app" onClick={() => setState(s => ({...s, drawerOpen: false}))}>
+      {/* The MAP: full viewport, pan/zoom */}
+      <window.MapSurface viewRef={viewRef} plateW={PLATE_W} plateH={PLATE_H}
+                         onViewChange={(v) => setZoom(v.k)}>
+        <window.MondrianPlate
+          terms={visibleTerms}
+          edges={window.MM_EDGES.filter(e => e[2] >= state.jaccard)}
+          selected={state.selected}
+          onSelect={id => setState(s => ({...s, selected: s.selected === id ? null : id}))}
+          showEdges={state.showEdges}
+          showLabels={state.showLabels}
+          plateW={PLATE_W}
+          plateH={PLATE_H}
+          caseLabel={state.caseLabel}
+          layerLabel={state.layer === "all" ? "All 1–13" : "L" + state.layer}
+          zoom={zoom}
+        />
+      </window.MapSurface>
+
+      {/* Floating UI */}
+      <window.SearchPill state={enrichedState} setState={setState} />
+      <window.TopRightCluster state={state} setState={setState} />
+      <window.MapLegend state={state} />
+      <window.MapControls
+        state={state} setState={setState}
+        layerCounts={layerCounts}
+        onZoomIn={() => viewRef.current?.zoomIn()}
+        onZoomOut={() => viewRef.current?.zoomOut()}
+        onReset={() => viewRef.current?.reset()}
+      />
+
+      {/* Drawers */}
+      <window.LeftDrawer state={state} setState={setState}
+                         visibleTerms={visibleTerms}
+                         layerCounts={layerCounts} />
+      <window.DetailDrawer state={state} setState={setState}
+                           visibleTerms={visibleTerms} />
+
+      {/* Modals */}
+      <window.ImportModal open={state.showImport}
+                          onClose={() => setState(s => ({...s, showImport: false}))}
+                          onFinish={() => setState(s => ({...s, showImport: false, datasetId: "user_scrna"}))}/>
+      <window.LoginModal open={state.showLogin}
+                         onClose={() => setState(s => ({...s, showLogin: false}))}/>
+
+      {state.tweaksOpen && <TweaksPanel state={state} setState={setState}/>}
+    </div>
+  );
+}
+
+function TweaksPanel({ state, setState }) {
+  const palettes = [
+    { id: "mondrian", swatches: ["#d7261e","#1857c4","#f3c20a","#fff"] },
+    { id: "muted",    swatches: ["#b34e4a","#496ea8","#c9a435","#fbf9f3"] },
+    { id: "mono",     swatches: ["#222","#666","#aaa","#eee"] },
+  ];
+  function set(k, v) {
+    setState(s => ({...s, [k]: v}));
+    window.parent.postMessage({ type: "__edit_mode_set_keys", edits: { [k]: v }}, "*");
+  }
+  return (
+    <div className="tweaks-panel" onClick={(e) => e.stopPropagation()}>
+      <h3>Tweaks</h3>
+      <div className="t-row">
+        <span className="lbl">Palette</span>
+        <div className="swatches">
+          {palettes.map(p => (
+            <div key={p.id}
+                 className={"sw " + (state.palette === p.id ? "on" : "")}
+                 title={p.id}
+                 style={{background: `linear-gradient(135deg, ${p.swatches[0]} 0 50%, ${p.swatches[1]} 50% 100%)`}}
+                 onClick={() => set("palette", p.id)} />
+          ))}
+        </div>
+      </div>
+      <div className="t-row">
+        <span className="lbl">Crosstalk edges</span>
+        <div className={"toggle " + (state.showEdges ? "on" : "")}
+             onClick={() => set("showEdges", !state.showEdges)}/>
+      </div>
+      <div className="t-row">
+        <span className="lbl">Term labels</span>
+        <div className={"toggle " + (state.showLabels ? "on" : "")}
+             onClick={() => set("showLabels", !state.showLabels)}/>
+      </div>
+      <div className="t-row">
+        <span className="lbl">Embedding</span>
+        <select value={state.embedding}
+                onChange={e => set("embedding", e.target.value)}
+                style={{fontSize:11.5, padding:"2px 6px"}}>
+          {window.MM_EMBEDDINGS.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+        </select>
+      </div>
+      <div className="t-row" style={{marginTop:4, color:"var(--ink-3)", fontSize:11}}>
+        <em>Tip: press <kbd>M</kbd> for menu, <kbd>+</kbd>/<kbd>−</kbd> to zoom, <kbd>0</kbd> to fit.</em>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
